@@ -1,15 +1,18 @@
-const mysql = require('mysql2/promise');
+const { Pool } = require('pg');
 require('dotenv').config();
 
-const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  port: Number(process.env.DB_PORT || 3306),
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'eaglebox',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
+const connectionString = process.env.DATABASE_URL;
+
+if (!connectionString) {
+  throw new Error('DATABASE_URL is not defined. Please set it in backend/.env');
+}
+
+const pool = new Pool({
+  connectionString,
+  ssl: connectionString.includes('sslmode=require') ? { rejectUnauthorized: false } : false,
 });
 
-module.exports = pool;
+module.exports = {
+  query: (text, params) => pool.query(text, params),
+  end: () => pool.end(),
+};
