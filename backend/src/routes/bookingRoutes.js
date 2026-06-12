@@ -14,12 +14,18 @@ router.get('/branches', async (req, res) => {
 });
 
 router.get('/grounds/:branchId', async (req, res) => {
+  const branchId = Number(req.params.branchId);
+
+  if (!Number.isInteger(branchId) || branchId <= 0) {
+    return res.status(400).json({ error: 'Invalid branchId' });
+  }
+
   try {
-    const grounds = await bookingService.getGroundsByBranch(req.params.branchId);
-    res.json(grounds);
+    const grounds = await bookingService.getGroundsByBranch(branchId);
+    return res.json(grounds);
   } catch (error) {
     console.error('Failed to fetch grounds:', error);
-    res.status(500).json({ error: 'Failed to fetch grounds' });
+    return res.status(500).json({ error: 'Failed to fetch grounds' });
   }
 });
 

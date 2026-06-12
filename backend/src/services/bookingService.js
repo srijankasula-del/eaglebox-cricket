@@ -15,7 +15,7 @@ async function getBranches() {
 }
 
 async function getGroundsByBranch(branchId) {
-  const { rows } = await pool.query('SELECT id, ground_name, capacity FROM grounds WHERE branch_id = $1 ORDER BY id', [branchId]);
+  const { rows } = await pool.query('SELECT id, ground_name FROM grounds WHERE branch_id = $1 ORDER BY id', [branchId]);
   return rows;
 }
 
