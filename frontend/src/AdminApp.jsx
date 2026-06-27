@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '';
 
@@ -129,7 +129,18 @@ export default function AdminApp({ onBackToCustomer }) {
     }, [token]);
 
     useEffect(() => {
-        if (token) loadAll();
+        if (!token) return;
+        let active = true;
+
+        (async () => {
+            if (active) {
+                await loadAll();
+            }
+        })();
+
+        return () => {
+            active = false;
+        };
     }, [token, loadAll]);
 
     const handleLogout = async () => {

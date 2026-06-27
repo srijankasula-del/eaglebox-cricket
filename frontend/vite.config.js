@@ -1,16 +1,19 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { resolve } from 'path'
+import { fileURLToPath } from 'url'
+
+const projectRoot = fileURLToPath(new URL('.', import.meta.url))
 
 export default defineConfig({
   plugins: [react()],
   build: {
     rollupOptions: {
       input: {
-        // Customer portal  →  eagleboxcricket.com  →  serves index.html
-        main: resolve(__dirname, 'index.html'),
-        // Admin panel      →  admin.eagleboxcricket.com  →  serves admin.html
-        admin: resolve(__dirname, 'admin.html'),
+        // Customer portal  ->  eagleboxcricket.com  ->  serves index.html
+        main: resolve(projectRoot, 'index.html'),
+        // Admin panel      ->  admin.eagleboxcricket.com  ->  serves admin.html
+        admin: resolve(projectRoot, 'admin.html'),
       }
     }
   },

@@ -4,7 +4,7 @@ Eagle Box Cricket is a production-style cricket venue booking platform for branc
 
 ## Project Overview
 
-This project is being rebuilt as a practical venue booking application for cricket grounds. The current focus is on a clean booking workflow, persistent storage, and a future-ready backend structure for admin management.
+This project is a practical venue booking application for cricket grounds. The current focus is on a clean booking workflow, persistent storage, admin operations, and production deployment readiness.
 
 ## Features
 
@@ -12,8 +12,9 @@ This project is being rebuilt as a practical venue booking application for crick
 - Date and time selection
 - Automatic ground allocation across the selected branch
 - Conflict detection for overlapping bookings
-- MySQL-backed persistence for bookings and venue data
-- Backend API prepared for future admin dashboard expansion
+- PostgreSQL-backed persistence for bookings, users, feedback, and cancellations
+- Customer and admin dashboards
+- Email notifications for booking and cancellation updates
 
 ## Technology Stack
 
@@ -27,7 +28,7 @@ This project is being rebuilt as a practical venue booking application for crick
 
 - Node.js
 - Express
-- MySQL
+- PostgreSQL
 
 ## Folder Structure
 
@@ -68,11 +69,11 @@ npm install
 cp .env.example .env
 ```
 
-Update the backend environment variables with your local MySQL configuration.
+Update the backend environment variables with your local PostgreSQL and email configuration.
 
 ### 4. Create the database
 
-Run the SQL in backend/init.sql against your MySQL server.
+Run the SQL in `backend/init.sql` against your PostgreSQL database.
 
 ### 5. Start the backend
 
@@ -82,24 +83,23 @@ node server.js
 
 ## Environment Variables
 
-The backend uses the following variables:
+Copy `backend/.env.example` to `backend/.env` and set:
 
 ```env
-DB_HOST=localhost
-DB_PORT=3306
-DB_USER=root
-DB_PASSWORD=
-DB_NAME=eaglebox
+DATABASE_URL=postgresql://user:password@host:5432/eaglebox?sslmode=require
+JWT_SECRET=change-this-to-a-long-random-secret
+GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
+EMAIL_USER=your-smtp-username@gmail.com
+EMAIL_PASS=your-smtp-app-password
+EMAIL_FROM=Eagle Box Cricket <no-reply@eagleboxcricket.com>
+ADMIN_EMAIL=admin@eagleboxcricket.com
 PORT=5000
 ```
 
-Do not commit your real .env file. Keep it local only.
+For the frontend, set `VITE_BACKEND_URL` and `VITE_GOOGLE_CLIENT_ID` during local development and deployment.
+
+Do not commit your real `.env` files. Keep them local only.
 
 ## Future Enhancements
 
-- Admin dashboard and booking management UI
-- Branch and ground management
-- Booking cancellations and status updates
-- Payment integration
-- Email and SMS notifications
-- Deployment to Render
+- Deployment to Vercel, Render, and Neon

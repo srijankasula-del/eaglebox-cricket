@@ -21,7 +21,16 @@ CREATE TABLE IF NOT EXISTS bookings (
   start_time TIME NOT NULL,
   end_time TIME NOT NULL,
   status VARCHAR(30) NOT NULL DEFAULT 'confirmed',
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+
+payment_status VARCHAR(20) NOT NULL DEFAULT 'paid',
+
+payment_method VARCHAR(30) NOT NULL DEFAULT 'Cash',
+
+amount DECIMAL(10,2) NOT NULL DEFAULT 800,
+
+payment_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS admins (
@@ -69,3 +78,45 @@ ON CONFLICT DO NOTHING;
 INSERT INTO admins (username, password)
 SELECT 'admin', 'admin'
 WHERE NOT EXISTS (SELECT 1 FROM admins WHERE username = 'admin');
+
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    full_name VARCHAR(100) NOT NULL,
+    email VARCHAR(150) UNIQUE NOT NULL,
+    phone VARCHAR(20),
+    password VARCHAR(255) NOT NULL,
+    role VARCHAR(20) DEFAULT 'customer',
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+ALTER TABLE bookings
+  ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+
+CREATE INDEX IF NOT EXISTS idx_bookings_user_id ON bookings(user_id);
+CREATE INDEX IF NOT EXISTS idx_bookings_slot_lookup
+  ON bookings(branch_id, booking_date, ground_id, start_time, end_time, status);
+
+CREATE TABLE IF NOT EXISTS cancellation_requests (
+  id SERIAL PRIMARY KEY,
+  booking_id INTEGER NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  reason TEXT NOT NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_one_pending_cancellation_per_booking
+  ON cancellation_requests(booking_id)
+  WHERE status = 'pending';
+
+CREATE TABLE IF NOT EXISTS feedback (
+  id SERIAL PRIMARY KEY,
+  booking_id INTEGER NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  review TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_one_per_booking
+  ON feedback(booking_id);
