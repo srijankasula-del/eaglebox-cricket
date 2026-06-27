@@ -7,9 +7,12 @@ function toPort(value, fallback) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-const smtpHost = process.env.EMAIL_HOST || 'smtp.gmail.com';
-const smtpPort = toPort(process.env.EMAIL_PORT, 465);
-const smtpSecure = String(process.env.EMAIL_SECURE || '').toLowerCase() === 'true' || smtpPort === 465;
+const smtpHost = process.env.EMAIL_HOST || 'smtp.mailersend.net';
+const smtpPort = toPort(process.env.EMAIL_PORT, 2525);
+const smtpSecure =
+  process.env.EMAIL_SECURE != null
+    ? String(process.env.EMAIL_SECURE).toLowerCase() === 'true'
+    : false;
 
 const transporter = nodemailer.createTransport({
   host: smtpHost,
