@@ -17,7 +17,22 @@ const transporter = nodemailer.createTransport({
   secure: smtpSecure,
   family: 4,
   lookup(hostname, options, callback) {
-    return dnsLookup(hostname, { ...options, family: 4 }, callback);
+    const lookupOptions =
+      typeof options === 'function'
+        ? { family: 4, all: false }
+        : { ...(options || {}), family: 4, all: false };
+    const done = typeof options === 'function' ? options : callback;
+
+    return dnsLookup(hostname, lookupOptions, (error, address, family) => {
+      console.log({
+        lookupHost: hostname,
+        resolvedAddress: address || null,
+        resolvedFamily: family || null,
+        lookupError: error ? error.code || error.message : null,
+      });
+
+      return done(error, address, family);
+    });
   },
   auth: {
     user: process.env.EMAIL_USER,
