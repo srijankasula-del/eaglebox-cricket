@@ -8,7 +8,7 @@ function toPort(value, fallback) {
 }
 
 const smtpHost = process.env.EMAIL_HOST || 'smtp.gmail.com';
-const smtpPort = toPort(process.env.EMAIL_PORT, 587);
+const smtpPort = toPort(process.env.EMAIL_PORT, 465);
 const smtpSecure = String(process.env.EMAIL_SECURE || '').toLowerCase() === 'true' || smtpPort === 465;
 
 const transporter = nodemailer.createTransport({
