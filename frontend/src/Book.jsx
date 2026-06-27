@@ -12,8 +12,7 @@ import {
 import axios from "axios";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:5000';
+import API_URL from "./lib/api";
 const minDate = new Date().toISOString().split('T')[0];
 
 const timeOptions = [];
@@ -115,12 +114,12 @@ const [searchData, setSearchData] =
   useEffect(() => {
     const loadBranches = async () => {
       try {
-        const response = await axios.get(`${BACKEND_URL}/api/branches`);
+        const response = await axios.get(`${API_URL}/api/branches`);
         const branchList = response.data || [];
 
         const summaries = await Promise.all(
           branchList.map(async (branch) => {
-            const groundsResponse = await axios.get(`${BACKEND_URL}/api/grounds/${branch.id}`);
+            const groundsResponse = await axios.get(`${API_URL}/api/grounds/${branch.id}`);
             return {
               ...branch,
               groundCount: groundsResponse.data?.length || 0,
@@ -153,7 +152,7 @@ const [searchData, setSearchData] =
       }
 
       try {
-        const response = await axios.get(`${BACKEND_URL}/api/grounds/${searchData.branchId}`);
+        const response = await axios.get(`${API_URL}/api/grounds/${searchData.branchId}`);
         setGroundsForBranch(response.data || []);
       } catch (err) {
         console.error('Failed to load grounds', err);
@@ -198,7 +197,7 @@ const handleRecommendedSlot = async () => {
 
   try {
     const response = await axios.post(
-      `${BACKEND_URL}/api/check-availability`,
+      `${API_URL}/api/check-availability`,
       {
         branchId: Number(updatedSearch.branchId),
         date: updatedSearch.date,
@@ -270,7 +269,7 @@ const handleRecommendedSlot = async () => {
 
   try {
     const availabilityResponse = await axios.post(
-      `${BACKEND_URL}/api/check-availability`,
+      `${API_URL}/api/check-availability`,
       {
         branchId: Number(searchData.branchId),
         date: searchData.date,
@@ -349,7 +348,7 @@ if (!token) {
 }
 
 const response = await axios.post(
-  `${BACKEND_URL}/api/bookings`,
+  `${API_URL}/api/bookings`,
   {
     customer_name: currentUser.full_name || bookingForm.fullName,
     phone: bookingForm.phone,

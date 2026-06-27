@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:5000";
+import API_URL from "../lib/api";
 
 const statusStyle = {
   confirmed: "bg-emerald-50 text-emerald-800",
@@ -57,10 +56,10 @@ export default function AdminDashboard() {
         Authorization: `Bearer ${token}`,
       };
       const [bookingsResponse, usersResponse, requestsResponse, feedbackResponse] = await Promise.all([
-        axios.get(`${BACKEND_URL}/api/bookings`, { headers: authHeaders }),
-        axios.get(`${BACKEND_URL}/api/auth/users`, { headers: authHeaders }),
-        axios.get(`${BACKEND_URL}/api/cancellation-requests`, { headers: authHeaders }),
-        axios.get(`${BACKEND_URL}/api/feedback`, { headers: authHeaders }),
+        axios.get(`${API_URL}/api/bookings`, { headers: authHeaders }),
+        axios.get(`${API_URL}/api/auth/users`, { headers: authHeaders }),
+        axios.get(`${API_URL}/api/cancellation-requests`, { headers: authHeaders }),
+        axios.get(`${API_URL}/api/feedback`, { headers: authHeaders }),
       ]);
 
       setBookings(bookingsResponse.data || []);
@@ -96,7 +95,7 @@ export default function AdminDashboard() {
   const updateStatus = async (bookingId, status) => {
     try {
       await axios.patch(
-        `${BACKEND_URL}/api/bookings/${bookingId}/status`,
+        `${API_URL}/api/bookings/${bookingId}/status`,
         { status },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -111,7 +110,7 @@ export default function AdminDashboard() {
   const updateCancellationRequestStatus = async (requestId, status) => {
     try {
       await axios.patch(
-        `${BACKEND_URL}/api/cancellation-requests/${requestId}/status`,
+        `${API_URL}/api/cancellation-requests/${requestId}/status`,
         { status },
         { headers: { Authorization: `Bearer ${token}` } }
       );

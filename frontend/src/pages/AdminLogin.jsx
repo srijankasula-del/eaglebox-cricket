@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import API_URL from "../lib/api";
 
 export default function AdminLogin() {
   const navigate = useNavigate();
@@ -9,16 +10,12 @@ export default function AdminLogin() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const BACKEND_URL =
-    import.meta.env.VITE_BACKEND_URL ||
-    'http://127.0.0.1:5000';
-
   const handleLogin = async (e) => {
     e.preventDefault();
 
     try {
       const response = await axios.post(
-        `${BACKEND_URL}/api/auth/login`,
+        `${API_URL}/api/auth/login`,
         {
           email,
           password,

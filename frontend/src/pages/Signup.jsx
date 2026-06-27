@@ -2,17 +2,14 @@ import { useState } from 'react';
 import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
 import { GoogleLogin } from "@react-oauth/google";
-
-const BACKEND_URL =
-  import.meta.env.VITE_BACKEND_URL ||
-  'http://127.0.0.1:5000';
+import API_URL from "../lib/api";
 
 export default function Signup() {
   const navigate = useNavigate();
 const handleGoogleSignup = async (credentialResponse) => {
   try {
     const response = await axios.post(
-      `${BACKEND_URL}/api/auth/google`,
+      `${API_URL}/api/auth/google`,
       {
         credential: credentialResponse.credential,
       }
@@ -59,7 +56,7 @@ const handleGoogleSignup = async (credentialResponse) => {
 
     try {
       await axios.post(
-        `${BACKEND_URL}/api/auth/signup`,
+        `${API_URL}/api/auth/signup`,
         formData
       );
 

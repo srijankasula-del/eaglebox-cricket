@@ -8,9 +8,7 @@ import {
   EnvelopeIcon,
   LockClosedIcon,
 } from "@heroicons/react/24/outline";
-
-const BACKEND_URL =
-  import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:5000";
+import API_URL from "../lib/api";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -29,7 +27,7 @@ export default function Login() {
 
     try {
       const response = await axios.post(
-        `${BACKEND_URL}/api/auth/login`,
+        `${API_URL}/api/auth/login`,
         {
           email,
           password,
@@ -63,7 +61,7 @@ export default function Login() {
 const handleGoogleSuccess = async (credentialResponse) => {
   try {
     const response = await axios.post(
-      `${BACKEND_URL}/api/auth/google`,
+      `${API_URL}/api/auth/google`,
       {
         credential: credentialResponse.credential,
       }

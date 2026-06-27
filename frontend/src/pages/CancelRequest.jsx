@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:5000";
+import API_URL from "../lib/api";
 
 export default function CancelRequest() {
   const navigate = useNavigate();
@@ -24,7 +23,7 @@ export default function CancelRequest() {
     const token = localStorage.getItem("token");
 
     const response = await fetch(
-  `${BACKEND_URL}/api/cancellation-request`,
+  `${API_URL}/api/cancellation-request`,
       {
         method: "POST",
         headers: {

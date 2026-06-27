@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '';
+import API_URL from "./lib/api";
 
 // ─────────────────────────────── helpers ────────────────────────────────
 function api(path, opts = {}, token) {
-    return fetch(`${BACKEND_URL}${path}`, {
+    return fetch(`${API_URL}${path}`, {
         headers: { 'Content-Type': 'application/json', ...(token ? { 'x-admin-token': token } : {}) },
         ...opts
     }).then(r => r.json());

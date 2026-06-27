@@ -3,8 +3,7 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:5000";
+import API_URL from "../lib/api";
 
 const statusClass = {
   confirmed: "bg-emerald-50 text-emerald-800 ring-emerald-200",
@@ -33,7 +32,7 @@ export default function CustomerDashboard() {
     const fetchBookings = async () => {
       try {
         const token = localStorage.getItem("token");
-        const response = await axios.get(`${BACKEND_URL}/api/my-bookings`, {
+        const response = await axios.get(`${API_URL}/api/my-bookings`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         setBookings(response.data || []);
@@ -52,7 +51,7 @@ export default function CustomerDashboard() {
     try {
       const token = localStorage.getItem("token");
       await axios.post(
-        `${BACKEND_URL}/api/feedback`,
+        `${API_URL}/api/feedback`,
         { bookingId: selectedBooking.id, rating, review },
         { headers: { Authorization: `Bearer ${token}` } }
       );
