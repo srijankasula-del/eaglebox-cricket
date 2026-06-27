@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer');
 const dns = require('dns').promises;
+const dnsLookup = require('dns').lookup;
 
 function toPort(value, fallback) {
   const parsed = Number(value);
@@ -14,6 +15,10 @@ const transporter = nodemailer.createTransport({
   host: smtpHost,
   port: smtpPort,
   secure: smtpSecure,
+  family: 4,
+  lookup(hostname, options, callback) {
+    return dnsLookup(hostname, { ...options, family: 4 }, callback);
+  },
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
