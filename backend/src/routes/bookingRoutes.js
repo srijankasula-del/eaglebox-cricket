@@ -1,5 +1,9 @@
 const express = require('express');
 const bookingService = require('../services/bookingService');
+const {
+  getEmailTransportConfig,
+  testEmailConnection,
+} = require('../services/emailService');
 const authMiddleware = require('../middleware/authMiddleware');
 const { adminMiddleware } = require('../middleware/authMiddleware');
 
@@ -63,6 +67,33 @@ router.post('/bookings', authMiddleware, async (req, res) => {
 
     return res.status(500).json({
       error: 'Booking creation failed',
+    });
+  }
+});
+
+router.get('/test-email', async (req, res) => {
+  try {
+    const diagnostics = await testEmailConnection();
+
+    return res.status(diagnostics.connectionSuccess ? 200 : 500).json({
+      host: diagnostics.transport.host,
+      port: diagnostics.transport.port,
+      secure: diagnostics.transport.secure,
+      connectionSuccess: diagnostics.connectionSuccess,
+      errorCode: diagnostics.errorCode,
+      errorMessage: diagnostics.errorMessage,
+      transport: getEmailTransportConfig(),
+      dns: diagnostics.dns,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      host: getEmailTransportConfig().host,
+      port: getEmailTransportConfig().port,
+      secure: getEmailTransportConfig().secure,
+      connectionSuccess: false,
+      errorCode: error.code || null,
+      errorMessage: error.message || String(error),
+      transport: getEmailTransportConfig(),
     });
   }
 });

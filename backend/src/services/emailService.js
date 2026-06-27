@@ -1,14 +1,50 @@
 const nodemailer = require('nodemailer');
+const dns = require('dns').promises;
+
+function toPort(value, fallback) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const smtpHost = process.env.EMAIL_HOST || 'smtp.gmail.com';
+const smtpPort = toPort(process.env.EMAIL_PORT, 587);
+const smtpSecure = String(process.env.EMAIL_SECURE || '').toLowerCase() === 'true' || smtpPort === 465;
 
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false,
+  host: smtpHost,
+  port: smtpPort,
+  secure: smtpSecure,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
 });
+
+function getEmailTransportConfig() {
+  return {
+    host: smtpHost,
+    port: smtpPort,
+    secure: smtpSecure,
+    user: process.env.EMAIL_USER ? `${String(process.env.EMAIL_USER).slice(0, 3)}***` : null,
+    hasPassword: Boolean(process.env.EMAIL_PASS),
+  };
+}
+
+async function getSmtpDnsDiagnostics() {
+  const host = smtpHost;
+  const [ipv4Result, ipv6Result] = await Promise.allSettled([
+    dns.resolve4(host),
+    dns.resolve6(host),
+  ]);
+
+  return {
+    host,
+    ipv4Addresses: ipv4Result.status === 'fulfilled' ? ipv4Result.value : [],
+    ipv6Addresses: ipv6Result.status === 'fulfilled' ? ipv6Result.value : [],
+    ipv4Error: ipv4Result.status === 'rejected' ? ipv4Result.reason.code || ipv4Result.reason.message : null,
+    ipv6Error: ipv6Result.status === 'rejected' ? ipv6Result.reason.code || ipv6Result.reason.message : null,
+  };
+}
 
 function escapeHtml(value = '') {
   return String(value)
@@ -118,6 +154,16 @@ async function sendEmail({ to, subject, html }) {
   if (!to) return;
 
   try {
+    const maskedUser = process.env.EMAIL_USER
+      ? `${String(process.env.EMAIL_USER).slice(0, 3)}***`
+      : null;
+    console.log({
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpSecure,
+      user: maskedUser,
+    });
+
     await transporter.sendMail({
       from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
       to,
@@ -130,7 +176,34 @@ async function sendEmail({ to, subject, html }) {
       subject,
       message: error.message,
     });
+    console.error({
+      code: error.code,
+      errno: error.errno,
+      address: error.address,
+      port: error.port,
+      message: error.message,
+    });
     throw error;
+  }
+}
+
+async function testEmailConnection() {
+  const diagnostics = {
+    transport: getEmailTransportConfig(),
+    dns: await getSmtpDnsDiagnostics(),
+    connectionSuccess: false,
+    errorCode: null,
+    errorMessage: null,
+  };
+
+  try {
+    await transporter.verify();
+    diagnostics.connectionSuccess = true;
+    return diagnostics;
+  } catch (error) {
+    diagnostics.errorCode = error.code || null;
+    diagnostics.errorMessage = error.message || String(error);
+    return diagnostics;
   }
 }
 
@@ -206,6 +279,8 @@ async function sendAdminNotificationEmail(details) {
 }
 
 module.exports = {
+  getEmailTransportConfig,
+  testEmailConnection,
   sendBookingConfirmationEmail,
   sendCancellationRequestSubmittedEmail,
   sendCancellationApprovedEmail,
