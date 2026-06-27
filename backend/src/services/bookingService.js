@@ -287,32 +287,36 @@ async function createBooking({
     client.release();
   }
 
-try {
-  console.log('BEFORE EMAIL DETAILS');
-  const details = await getBookingEmailDetails(insertedBooking.id);
-  console.log('AFTER EMAIL DETAILS');
+  setImmediate(() => {
+    (async () => {
+      try {
+        console.log('BEFORE EMAIL DETAILS');
+        const details = await getBookingEmailDetails(insertedBooking.id);
+        console.log('AFTER EMAIL DETAILS');
 
-  if (details?.email) {
-    console.log('BEFORE EMAIL SEND');
-    await sendBookingConfirmationEmail({
-      customerEmail: details.email,
-      customerName: details.customer_name,
-      bookingId: details.id,
-      branchName: details.branch_name,
-      groundName: details.ground_name,
-      bookingDate: details.booking_date,
-      startTime: details.start_time,
-      endTime: details.end_time,
-      createdAt: details.created_at,
-    });
-    console.log('AFTER EMAIL SEND');
-  }
-} catch (emailError) {
-  console.error(
-    "BOOKING EMAIL ERROR:",
-    emailError
-  );
-}
+        if (details?.email) {
+          console.log('BEFORE EMAIL SEND');
+          await sendBookingConfirmationEmail({
+            customerEmail: details.email,
+            customerName: details.customer_name,
+            bookingId: details.id,
+            branchName: details.branch_name,
+            groundName: details.ground_name,
+            bookingDate: details.booking_date,
+            startTime: details.start_time,
+            endTime: details.end_time,
+            createdAt: details.created_at,
+          });
+          console.log('AFTER EMAIL SEND');
+        }
+      } catch (emailError) {
+        console.error(
+          "BOOKING EMAIL ERROR:",
+          emailError
+        );
+      }
+    })();
+  });
   return {
   success: true,
   booking: {

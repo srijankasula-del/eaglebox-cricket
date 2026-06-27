@@ -10,14 +10,6 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-transporter.verify((error) => {
-  if (error) {
-    console.error('SMTP ERROR:', error);
-  } else {
-    console.log('SMTP READY');
-  }
-});
-
 function escapeHtml(value = '') {
   return String(value)
     .replace(/&/g, '&amp;')
