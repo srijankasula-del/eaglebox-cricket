@@ -173,27 +173,6 @@ router.get('/analytics', adminMiddleware, async (req, res) => {
   }
 });
 
-router.get('/bookings/:id', adminMiddleware, async (req, res) => {
-  try {
-    const bookingId = Number(req.params.id);
-
-    if (!Number.isInteger(bookingId) || bookingId <= 0) {
-      return res.status(400).json({ error: 'Invalid booking id' });
-    }
-
-    const booking = await bookingService.getBookingById(bookingId);
-
-    if (!booking) {
-      return res.status(404).json({ error: 'Booking not found' });
-    }
-
-    return res.json(booking);
-  } catch (error) {
-    console.error('Failed to fetch booking:', error);
-    return res.status(500).json({ error: 'Failed to fetch booking' });
-  }
-});
-
 router.patch('/bookings/:id/status', adminMiddleware, async (req, res) => {
   try {
     const bookingId = Number(req.params.id);
@@ -272,6 +251,27 @@ router.get('/bookings-export', adminMiddleware, async (req, res) => {
   } catch (error) {
     console.error('Failed to export bookings:', error);
     return res.status(500).json({ error: 'Failed to export bookings' });
+  }
+});
+
+router.get('/bookings/:id', adminMiddleware, async (req, res) => {
+  try {
+    const bookingId = Number(req.params.id);
+
+    if (!Number.isInteger(bookingId) || bookingId <= 0) {
+      return res.status(400).json({ error: 'Invalid booking id' });
+    }
+
+    const booking = await bookingService.getBookingById(bookingId);
+
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    return res.json(booking);
+  } catch (error) {
+    console.error('Failed to fetch booking:', error);
+    return res.status(500).json({ error: 'Failed to fetch booking' });
   }
 });
 
