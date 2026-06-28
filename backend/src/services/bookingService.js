@@ -765,8 +765,7 @@ async function updateCorporateRequestStatus(requestId, status) {
   const { rows } = await pool.query(
     `
     UPDATE corporate_requests
-    SET status = $1,
-        updated_at = NOW()
+    SET status = $1
     WHERE id = $2
     RETURNING *
     `,

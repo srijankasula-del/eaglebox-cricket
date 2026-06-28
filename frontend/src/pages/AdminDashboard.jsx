@@ -253,7 +253,7 @@ export default function AdminDashboard() {
           ))}
         </section>
 
-        <section className="mt-6 grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
+        <section className="mt-6 grid gap-6 lg:grid-cols-2">
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -289,82 +289,6 @@ export default function AdminDashboard() {
               )}
             </div>
           </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <h2 className="text-xl font-black">Bookings</h2>
-                <p className="mt-1 text-sm text-slate-500">Manage match status and inspect booking details.</p>
-              </div>
-              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold">
-                <option value="all">All statuses</option>
-                <option value="confirmed">Confirmed</option>
-                <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
-                <option value="pending">Pending</option>
-              </select>
-            </div>
-
-            <div className="mt-5 -mx-5 overflow-x-auto px-5">
-              {loading ? (
-                <div className="space-y-3">
-                  {[1, 2, 3].map((item) => <div key={item} className="h-16 animate-pulse rounded-xl bg-slate-100" />)}
-                </div>
-              ) : (
-                <table className="min-w-[720px] text-left text-sm">
-                  <thead className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="py-3 pr-4">Customer</th>
-                      <th className="py-3 pr-4">Slot</th>
-                      <th className="py-3 pr-4">Status</th>
-                      <th className="py-3 pr-4">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredBookings.map((booking) => {
-                      const locked = booking.status === "cancelled" || booking.status === "completed";
-                      return (
-                        <tr key={booking.id}>
-                          <td className="py-4 pr-4 align-top">
-                            <p className="font-black">{booking.customer_name}</p>
-                            <p className="mt-1 text-slate-500">{booking.phone}</p>
-                            <p className="mt-1 max-w-[180px] break-words text-slate-500">{booking.branch_name}</p>
-                          </td>
-                          <td className="py-4 pr-4 align-top">
-                            <p className="font-semibold">{booking.ground_name}</p>
-                            <p className="mt-1 text-slate-500">{new Date(booking.booking_date).toLocaleDateString()}</p>
-                            <p className="mt-1 text-slate-500">{booking.start_time} to {booking.end_time}</p>
-                          </td>
-                          <td className="py-4 pr-4 align-top">
-                            <span className={`rounded-full px-3 py-1 text-xs font-black capitalize ${statusStyle[booking.status] || "bg-slate-100 text-slate-700"}`}>
-                              {booking.status}
-                            </span>
-                            <p className="mt-2 text-xs font-semibold text-slate-500">{booking.payment_status}</p>
-                          </td>
-                          <td className="py-4 pr-4 align-top">
-                            <div className="flex min-w-[220px] flex-wrap gap-2">
-                              <button disabled={locked} onClick={() => updateStatus(booking.id, "completed")} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-bold text-white disabled:bg-slate-200 disabled:text-slate-400">
-                                Complete
-                              </button>
-                              <button disabled={locked} onClick={() => updateStatus(booking.id, "cancelled")} className="rounded-lg bg-red-700 px-3 py-2 text-xs font-bold text-white disabled:bg-slate-200 disabled:text-slate-400">
-                                Cancel
-                              </button>
-                              <button onClick={() => navigate(`/admin/bookings/${booking.id}`)} className="rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white">
-                                Details
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between gap-4">
             <div>
               <h2 className="text-xl font-black">Corporate requests</h2>
@@ -430,6 +354,79 @@ export default function AdminDashboard() {
                 )}
               </article>
             ))}
+          </div>
+        </section>
+
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-xl font-black">Bookings</h2>
+              <p className="mt-1 text-sm text-slate-500">Manage match status and inspect booking details.</p>
+            </div>
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold">
+              <option value="all">All statuses</option>
+              <option value="confirmed">Confirmed</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+              <option value="pending">Pending</option>
+            </select>
+          </div>
+
+          <div className="mt-5 -mx-5 overflow-x-auto px-5">
+            {loading ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((item) => <div key={item} className="h-16 animate-pulse rounded-xl bg-slate-100" />)}
+              </div>
+            ) : (
+              <table className="min-w-[720px] text-left text-sm">
+                <thead className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="py-3 pr-4">Customer</th>
+                    <th className="py-3 pr-4">Slot</th>
+                    <th className="py-3 pr-4">Status</th>
+                    <th className="py-3 pr-4">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredBookings.map((booking) => {
+                    const locked = booking.status === "cancelled" || booking.status === "completed";
+                    return (
+                      <tr key={booking.id}>
+                        <td className="py-4 pr-4 align-top">
+                          <p className="font-black">{booking.customer_name}</p>
+                          <p className="mt-1 text-slate-500">{booking.phone}</p>
+                          <p className="mt-1 max-w-[180px] break-words text-slate-500">{booking.branch_name}</p>
+                        </td>
+                        <td className="py-4 pr-4 align-top">
+                          <p className="font-semibold">{booking.ground_name}</p>
+                          <p className="mt-1 text-slate-500">{new Date(booking.booking_date).toLocaleDateString()}</p>
+                          <p className="mt-1 text-slate-500">{booking.start_time} to {booking.end_time}</p>
+                        </td>
+                        <td className="py-4 pr-4 align-top">
+                          <span className={`rounded-full px-3 py-1 text-xs font-black capitalize ${statusStyle[booking.status] || "bg-slate-100 text-slate-700"}`}>
+                            {booking.status}
+                          </span>
+                          <p className="mt-2 text-xs font-semibold text-slate-500">{booking.payment_status}</p>
+                        </td>
+                        <td className="py-4 pr-4 align-top">
+                          <div className="flex min-w-[220px] flex-wrap gap-2">
+                            <button disabled={locked} onClick={() => updateStatus(booking.id, "completed")} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-bold text-white disabled:bg-slate-200 disabled:text-slate-400">
+                              Complete
+                            </button>
+                            <button disabled={locked} onClick={() => updateStatus(booking.id, "cancelled")} className="rounded-lg bg-red-700 px-3 py-2 text-xs font-bold text-white disabled:bg-slate-200 disabled:text-slate-400">
+                              Cancel
+                            </button>
+                            <button onClick={() => navigate(`/admin/bookings/${booking.id}`)} className="rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white">
+                              Details
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
         </section>
 
