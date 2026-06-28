@@ -55,6 +55,12 @@ export default function Home() {
                 >
                   Check available slots
                 </button>
+                <button
+                  onClick={() => navigate("/corporate-booking")}
+                  className="rounded-full border border-white/25 px-7 py-3.5 text-center text-sm font-bold text-white hover:bg-white/10"
+                >
+                  Corporate request
+                </button>
                 <a
                   href="#branches"
                   className="rounded-full border border-white/25 px-7 py-3.5 text-center text-sm font-bold text-white hover:bg-white/10"

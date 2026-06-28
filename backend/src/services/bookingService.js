@@ -672,6 +672,191 @@ async function updateCancellationRequestStatus(
 
   return request;
 }
+
+async function createCorporateRequest(payload) {
+  const companyName = String(payload.company_name || payload.companyName || '').trim();
+  const contactPerson = String(payload.contact_person || payload.contactPerson || '').trim();
+  const email = String(payload.email || '').trim();
+  const phone = String(payload.phone || payload.phoneNumber || '').trim();
+  const employeeCount = Number(payload.employee_count || payload.employeeCount);
+  const eventType = String(payload.event_type || payload.eventType || '').trim();
+  const preferredBranchId = Number(payload.preferred_branch_id || payload.preferredBranchId);
+  const eventDate = normalizeDate(payload.event_date || payload.eventDate);
+  const preferredTime = String(payload.preferred_time || payload.preferredTime || '').trim();
+  const groundsRequired = Number(payload.grounds_required || payload.groundsRequired || 1);
+  const additionalNotes = String(payload.additional_notes || payload.additionalNotes || '').trim();
+
+  const allowedEventTypes = [
+    'Team Outing',
+    'Tournament',
+    'Employee Engagement',
+    'Practice Session',
+  ];
+
+  if (!companyName) throw new Error('Company name is required');
+  if (!contactPerson) throw new Error('Contact person is required');
+  if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error('Please enter a valid email address');
+  if (!/^[0-9+\-\s()]{7,20}$/.test(phone)) throw new Error('Please enter a valid phone number');
+  if (!Number.isInteger(employeeCount) || employeeCount <= 0) throw new Error('Employee count is required');
+  if (!allowedEventTypes.includes(eventType)) throw new Error('Please choose a valid event type');
+  if (!Number.isInteger(preferredBranchId) || preferredBranchId <= 0) throw new Error('Please select a preferred branch');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) throw new Error('Please choose a valid event date');
+  if (!preferredTime) throw new Error('Preferred time is required');
+  if (!Number.isInteger(groundsRequired) || groundsRequired <= 0) throw new Error('Number of grounds required is required');
+
+  const { rows } = await pool.query(
+    `
+    INSERT INTO corporate_requests (
+      company_name,
+      contact_person,
+      email,
+      phone,
+      employee_count,
+      event_type,
+      preferred_branch_id,
+      event_date,
+      preferred_time,
+      grounds_required,
+      additional_notes,
+      status
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending')
+    RETURNING *
+    `,
+    [
+      companyName,
+      contactPerson,
+      email,
+      phone,
+      employeeCount,
+      eventType,
+      preferredBranchId,
+      eventDate,
+      preferredTime,
+      groundsRequired,
+      additionalNotes || null,
+    ]
+  );
+
+  return rows[0];
+}
+
+async function getCorporateRequests() {
+  const { rows } = await pool.query(
+    `
+    SELECT
+      cr.*,
+      b.branch_name
+    FROM corporate_requests cr
+    LEFT JOIN branches b
+      ON b.id = cr.preferred_branch_id
+    ORDER BY cr.created_at DESC
+    `
+  );
+
+  return rows;
+}
+
+async function updateCorporateRequestStatus(requestId, status) {
+  if (!['pending', 'approved', 'rejected'].includes(status)) {
+    throw new Error('Invalid corporate request status');
+  }
+
+  const { rows } = await pool.query(
+    `
+    UPDATE corporate_requests
+    SET status = $1,
+        updated_at = NOW()
+    WHERE id = $2
+    RETURNING *
+    `,
+    [status, requestId]
+  );
+
+  if (!rows[0]) {
+    throw new Error('Corporate request not found');
+  }
+
+  return rows[0];
+}
+
+async function getAnalytics() {
+  const [totalBookings, todaysBookings, confirmedBookings, cancelledBookings, corporateRequests, revenue] = await Promise.all([
+    pool.query('SELECT COUNT(*)::int AS count FROM bookings'),
+    pool.query('SELECT COUNT(*)::int AS count FROM bookings WHERE booking_date = CURRENT_DATE'),
+    pool.query("SELECT COUNT(*)::int AS count FROM bookings WHERE status = 'confirmed'"),
+    pool.query("SELECT COUNT(*)::int AS count FROM bookings WHERE status = 'cancelled'"),
+    pool.query('SELECT COUNT(*)::int AS count FROM corporate_requests'),
+    pool.query("SELECT COALESCE(SUM(amount), 0)::numeric AS total FROM bookings WHERE payment_status = 'paid'"),
+  ]);
+
+  return {
+    totalBookings: totalBookings.rows[0].count,
+    todaysBookings: todaysBookings.rows[0].count,
+    confirmedBookings: confirmedBookings.rows[0].count,
+    cancelledBookings: cancelledBookings.rows[0].count,
+    corporateRequests: corporateRequests.rows[0].count,
+    totalRevenue: Number(revenue.rows[0].total || 0),
+  };
+}
+
+async function getBookingById(bookingId) {
+  const { rows } = await pool.query(
+    `
+    SELECT
+      b.id,
+      b.customer_name,
+      b.phone,
+      b.booking_date,
+      b.start_time,
+      b.end_time,
+      b.status,
+      b.payment_status,
+      b.payment_method,
+      b.amount,
+      b.created_at,
+      br.branch_name,
+      g.ground_name
+    FROM bookings b
+    LEFT JOIN branches br
+      ON br.id = b.branch_id
+    LEFT JOIN grounds g
+      ON g.id = b.ground_id
+    WHERE b.id = $1
+    `,
+    [bookingId]
+  );
+
+  return rows[0] || null;
+}
+
+async function getBookingsCsv() {
+  const { rows } = await pool.query(
+    `
+    SELECT
+      b.id,
+      b.customer_name,
+      b.phone,
+      b.booking_date,
+      b.start_time,
+      b.end_time,
+      b.status,
+      b.payment_status,
+      b.amount,
+      b.created_at,
+      br.branch_name,
+      g.ground_name
+    FROM bookings b
+    LEFT JOIN branches br
+      ON br.id = b.branch_id
+    LEFT JOIN grounds g
+      ON g.id = b.ground_id
+    ORDER BY b.created_at DESC
+    `
+  );
+
+  return rows;
+}
 async function findRecommendedSlot(
   branchId,
   date,
@@ -758,4 +943,10 @@ module.exports = {
   createCancellationRequest,
   getCancellationRequests,
   updateCancellationRequestStatus,
+  createCorporateRequest,
+  getCorporateRequests,
+  updateCorporateRequestStatus,
+  getAnalytics,
+  getBookingById,
+  getBookingsCsv,
 };

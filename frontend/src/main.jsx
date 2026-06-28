@@ -15,6 +15,8 @@ import AdminDashboard from './pages/AdminDashboard.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import AdminProtectedRoute from './components/AdminProtectedRoute.jsx';
 import CancelRequest from './pages/CancelRequest.jsx';
+import CorporateBooking from './pages/CorporateBooking.jsx';
+import BookingDetail from './pages/BookingDetail.jsx';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
@@ -38,6 +40,8 @@ createRoot(document.getElementById('root')).render(
           <Route path="/login" element={<Login />} />
 
           <Route path="/signup" element={<Signup />} />
+
+          <Route path="/corporate-booking" element={<CorporateBooking />} />
 
           <Route
             path="/dashboard"
@@ -64,6 +68,15 @@ createRoot(document.getElementById('root')).render(
             element={
               <AdminProtectedRoute>
                 <AdminDashboard />
+              </AdminProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/admin/bookings/:id"
+            element={
+              <AdminProtectedRoute>
+                <BookingDetail />
               </AdminProtectedRoute>
             }
           />

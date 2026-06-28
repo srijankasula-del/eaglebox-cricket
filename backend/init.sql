@@ -120,3 +120,24 @@ CREATE TABLE IF NOT EXISTS feedback (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_one_per_booking
   ON feedback(booking_id);
+
+CREATE TABLE IF NOT EXISTS corporate_requests (
+  id SERIAL PRIMARY KEY,
+  company_name VARCHAR(150) NOT NULL,
+  contact_person VARCHAR(120) NOT NULL,
+  email VARCHAR(150) NOT NULL,
+  phone VARCHAR(20) NOT NULL,
+  employee_count INTEGER NOT NULL,
+  event_type VARCHAR(50) NOT NULL,
+  preferred_branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL,
+  event_date DATE NOT NULL,
+  preferred_time VARCHAR(20) NOT NULL,
+  grounds_required INTEGER NOT NULL DEFAULT 1,
+  additional_notes TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_corporate_requests_status_created_at
+  ON corporate_requests(status, created_at DESC);

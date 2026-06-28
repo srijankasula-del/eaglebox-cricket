@@ -163,6 +163,37 @@ router.get('/bookings', adminMiddleware, async (req, res) => {
   }
 });
 
+router.get('/analytics', adminMiddleware, async (req, res) => {
+  try {
+    const analytics = await bookingService.getAnalytics();
+    return res.json(analytics);
+  } catch (error) {
+    console.error('Failed to fetch analytics:', error);
+    return res.status(500).json({ error: 'Failed to fetch analytics' });
+  }
+});
+
+router.get('/bookings/:id', adminMiddleware, async (req, res) => {
+  try {
+    const bookingId = Number(req.params.id);
+
+    if (!Number.isInteger(bookingId) || bookingId <= 0) {
+      return res.status(400).json({ error: 'Invalid booking id' });
+    }
+
+    const booking = await bookingService.getBookingById(bookingId);
+
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    return res.json(booking);
+  } catch (error) {
+    console.error('Failed to fetch booking:', error);
+    return res.status(500).json({ error: 'Failed to fetch booking' });
+  }
+});
+
 router.patch('/bookings/:id/status', adminMiddleware, async (req, res) => {
   try {
     const bookingId = Number(req.params.id);
@@ -195,6 +226,52 @@ router.patch('/bookings/:id/status', adminMiddleware, async (req, res) => {
     return res.status(500).json({
       error: 'Failed to update booking status',
     });
+  }
+});
+
+router.get('/bookings-export', adminMiddleware, async (req, res) => {
+  try {
+    const bookings = await bookingService.getBookingsCsv();
+    const headers = [
+      'id',
+      'customer_name',
+      'phone',
+      'branch_name',
+      'ground_name',
+      'booking_date',
+      'start_time',
+      'end_time',
+      'status',
+      'payment_status',
+      'amount',
+      'created_at',
+    ];
+
+    const escapeCsv = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`;
+    const csv = [
+      headers.join(','),
+      ...bookings.map((booking) => [
+        booking.id,
+        booking.customer_name,
+        booking.phone,
+        booking.branch_name,
+        booking.ground_name,
+        booking.booking_date,
+        booking.start_time,
+        booking.end_time,
+        booking.status,
+        booking.payment_status,
+        booking.amount,
+        booking.created_at,
+      ].map(escapeCsv).join(',')),
+    ].join('\n');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="bookings-export.csv"');
+    return res.send(csv);
+  } catch (error) {
+    console.error('Failed to export bookings:', error);
+    return res.status(500).json({ error: 'Failed to export bookings' });
   }
 });
 
@@ -275,4 +352,41 @@ router.patch(
     }
   }
 );
+
+router.post('/corporate-requests', async (req, res) => {
+  try {
+    const request = await bookingService.createCorporateRequest(req.body);
+    return res.status(201).json({ success: true, request });
+  } catch (error) {
+    console.error('Corporate request creation failed:', error);
+    return res.status(400).json({ error: error.message || 'Failed to create request' });
+  }
+});
+
+router.get('/corporate-requests', adminMiddleware, async (req, res) => {
+  try {
+    const requests = await bookingService.getCorporateRequests();
+    return res.json(requests);
+  } catch (error) {
+    console.error('Failed to fetch corporate requests:', error);
+    return res.status(500).json({ error: 'Failed to fetch corporate requests' });
+  }
+});
+
+router.patch('/corporate-requests/:id/status', adminMiddleware, async (req, res) => {
+  try {
+    const requestId = Number(req.params.id);
+    const { status } = req.body;
+
+    if (!Number.isInteger(requestId) || requestId <= 0) {
+      return res.status(400).json({ error: 'Invalid request id' });
+    }
+
+    const updated = await bookingService.updateCorporateRequestStatus(requestId, status);
+    return res.json(updated);
+  } catch (error) {
+    console.error('Failed to update corporate request:', error);
+    return res.status(400).json({ error: error.message || 'Failed to update request' });
+  }
+});
 module.exports = router;

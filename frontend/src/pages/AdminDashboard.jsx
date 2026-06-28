@@ -16,14 +16,19 @@ export default function AdminDashboard() {
   const [bookings, setBookings] = useState([]);
   const [users, setUsers] = useState([]);
   const [cancelRequests, setCancelRequests] = useState([]);
+  const [corporateRequests, setCorporateRequests] = useState([]);
   const [feedback, setFeedback] = useState([]);
-  const [selectedBooking, setSelectedBooking] = useState(null);
+  const [analytics, setAnalytics] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState("");
 
   const metrics = useMemo(() => {
+    if (analytics) {
+      return analytics;
+    }
+
     const paidRevenue = bookings.reduce(
       (sum, booking) => booking.payment_status === "paid" ? sum + Number(booking.amount || 0) : sum,
       0
@@ -37,10 +42,13 @@ export default function AdminDashboard() {
       bookings: bookings.length,
       confirmed: bookings.filter((booking) => booking.status === "confirmed").length,
       completed: bookings.filter((booking) => booking.status === "completed").length,
+      cancelled: bookings.filter((booking) => booking.status === "cancelled").length,
+      todayBookings: bookings.filter((booking) => new Date(booking.booking_date).toDateString() === new Date().toDateString()).length,
+      corporateRequests: corporateRequests.length,
       revenue: paidRevenue,
       rating: averageRating,
     };
-  }, [bookings, feedback, users]);
+  }, [analytics, bookings, corporateRequests, feedback, users]);
 
   const filteredBookings = statusFilter === "all"
     ? bookings
@@ -55,17 +63,21 @@ export default function AdminDashboard() {
       const authHeaders = {
         Authorization: `Bearer ${token}`,
       };
-      const [bookingsResponse, usersResponse, requestsResponse, feedbackResponse] = await Promise.all([
+      const [bookingsResponse, usersResponse, requestsResponse, feedbackResponse, analyticsResponse, corporateResponse] = await Promise.all([
         axios.get(`${API_URL}/api/bookings`, { headers: authHeaders }),
         axios.get(`${API_URL}/api/auth/users`, { headers: authHeaders }),
         axios.get(`${API_URL}/api/cancellation-requests`, { headers: authHeaders }),
         axios.get(`${API_URL}/api/feedback`, { headers: authHeaders }),
+        axios.get(`${API_URL}/api/analytics`, { headers: authHeaders }),
+        axios.get(`${API_URL}/api/corporate-requests`, { headers: authHeaders }),
       ]);
 
       setBookings(bookingsResponse.data || []);
       setUsers(usersResponse.data || []);
       setCancelRequests(requestsResponse.data || []);
       setFeedback(feedbackResponse.data || []);
+      setAnalytics(analyticsResponse.data || null);
+      setCorporateRequests(corporateResponse.data || []);
       if (showRefresh) {
         setMessage("Dashboard refreshed.");
       }
@@ -122,6 +134,40 @@ export default function AdminDashboard() {
     }
   };
 
+  const updateCorporateRequestStatus = async (requestId, status) => {
+    try {
+      await axios.patch(
+        `${API_URL}/api/corporate-requests/${requestId}/status`,
+        { status },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setMessage(`Corporate request ${status}.`);
+      await fetchData();
+    } catch (error) {
+      console.error(error);
+      setMessage("Failed to update corporate request.");
+    }
+  };
+
+  const exportBookings = () => {
+    axios.get(`${API_URL}/api/bookings-export`, {
+      headers: { Authorization: `Bearer ${token}` },
+      responseType: "blob",
+    }).then((response) => {
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: "text/csv" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", "bookings-export.csv");
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    }).catch((error) => {
+      console.error(error);
+      setMessage("Failed to export bookings.");
+    });
+  };
+
   const logout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
@@ -137,6 +183,9 @@ export default function AdminDashboard() {
             <h1 className="mt-1 text-3xl font-black">Admin dashboard</h1>
           </div>
           <div className="flex flex-wrap gap-3">
+            <button onClick={exportBookings} className="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-800">
+              Export CSV
+            </button>
             <button
               onClick={() => fetchData({ showRefresh: true })}
               disabled={refreshing}
@@ -166,12 +215,12 @@ export default function AdminDashboard() {
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
           {[
-            ["Users", metrics.users],
-            ["Bookings", metrics.bookings],
-            ["Confirmed", metrics.confirmed],
-            ["Completed", metrics.completed],
-            ["Revenue", `Rs. ${metrics.revenue.toLocaleString("en-IN")}`],
-            ["Avg rating", metrics.rating],
+            ["Total Bookings", metrics.totalBookings ?? metrics.bookings],
+            ["Today's Bookings", metrics.todaysBookings ?? metrics.todayBookings],
+            ["Confirmed Bookings", metrics.confirmedBookings ?? metrics.confirmed],
+            ["Cancelled Bookings", metrics.cancelledBookings ?? metrics.cancelled],
+            ["Corporate Requests", metrics.corporateRequests],
+            ["Total Revenue", `Rs. ${Number((metrics.totalRevenue ?? metrics.revenue) || 0).toLocaleString("en-IN")}`],
           ].map(([label, value]) => (
             <div key={label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <p className="text-sm font-semibold text-slate-500">{label}</p>
@@ -276,7 +325,7 @@ export default function AdminDashboard() {
                               <button disabled={locked} onClick={() => updateStatus(booking.id, "cancelled")} className="rounded-lg bg-red-700 px-3 py-2 text-xs font-bold text-white disabled:bg-slate-200 disabled:text-slate-400">
                                 Cancel
                               </button>
-                              <button onClick={() => setSelectedBooking(booking)} className="rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white">
+                              <button onClick={() => navigate(`/admin/bookings/${booking.id}`)} className="rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white">
                                 Details
                               </button>
                             </div>
@@ -288,6 +337,48 @@ export default function AdminDashboard() {
                 </table>
               )}
             </div>
+          </div>
+        </section>
+
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-black">Corporate requests</h2>
+              <p className="mt-1 text-sm text-slate-500">Review pending bulk booking enquiries.</p>
+            </div>
+            <span className="rounded-full bg-amber-50 px-3 py-1 text-sm font-black text-amber-800">{corporateRequests.length}</span>
+          </div>
+          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            {corporateRequests.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">No corporate requests yet.</div>
+            ) : corporateRequests.map((request) => (
+              <article key={request.id} className="rounded-2xl border border-slate-200 p-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-lg font-black">{request.company_name}</p>
+                    <p className="text-sm text-slate-500">{request.contact_person} - {request.email}</p>
+                  </div>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black uppercase">{request.status}</span>
+                </div>
+                <div className="mt-4 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+                  <div>Event Type: <span className="font-semibold">{request.event_type}</span></div>
+                  <div>Employees: <span className="font-semibold">{request.employee_count}</span></div>
+                  <div>Branch: <span className="font-semibold">{request.branch_name}</span></div>
+                  <div>Date: <span className="font-semibold">{new Date(request.event_date).toLocaleDateString()}</span></div>
+                  <div>Time: <span className="font-semibold">{request.preferred_time}</span></div>
+                  <div>Grounds: <span className="font-semibold">{request.grounds_required}</span></div>
+                </div>
+                {request.additional_notes ? <p className="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">{request.additional_notes}</p> : null}
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                  <button onClick={() => updateCorporateRequestStatus(request.id, "approved")} className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white">
+                    Approve
+                  </button>
+                  <button onClick={() => updateCorporateRequestStatus(request.id, "rejected")} className="rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-red-700 ring-1 ring-red-200">
+                    Reject
+                  </button>
+                </div>
+              </article>
+            ))}
           </div>
         </section>
 
@@ -328,34 +419,6 @@ export default function AdminDashboard() {
         </section>
       </main>
 
-      {selectedBooking ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
-          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl sm:p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-700">Booking details</p>
-                <h2 className="mt-2 break-words text-2xl font-black">#{selectedBooking.id} - {selectedBooking.customer_name}</h2>
-              </div>
-              <button onClick={() => setSelectedBooking(null)} className="rounded-full bg-slate-100 px-3 py-1 text-xl font-black">X</button>
-            </div>
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              {[
-                ["Phone", selectedBooking.phone],
-                ["Branch", selectedBooking.branch_name],
-                ["Ground", selectedBooking.ground_name],
-                ["Date", new Date(selectedBooking.booking_date).toLocaleDateString()],
-                ["Time", `${selectedBooking.start_time} to ${selectedBooking.end_time}`],
-                ["Payment", selectedBooking.payment_status],
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-xl bg-slate-50 p-4">
-                  <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p>
-                  <p className="mt-2 break-words font-black">{value}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
