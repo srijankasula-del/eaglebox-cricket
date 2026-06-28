@@ -25,6 +25,123 @@ function normalizeDate(value) {
   return String(value).slice(0, 10);
 }
 
+function to12HourLabel(timeValue) {
+  const [hoursRaw, minutesRaw] = String(timeValue).slice(0, 5).split(':');
+  const hours = Number(hoursRaw);
+  const minutes = Number(minutesRaw);
+  const suffix = hours >= 12 ? 'PM' : 'AM';
+  const normalizedHour = hours % 12 || 12;
+
+  return `${normalizedHour}:${String(minutes).padStart(2, '0')} ${suffix}`;
+}
+
+function parseCorporateTimeRange(value) {
+  const text = String(value || '').trim();
+  const parts = text.split(/\s*-\s*/).map((part) => part.trim()).filter(Boolean);
+
+  if (parts.length < 2) {
+    throw new Error('Preferred time must include a start and end time, for example 10:00 AM - 12:00 PM');
+  }
+
+  const startMatch = parts[0].match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+  const endMatch = parts[1].match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+
+  if (!startMatch || !endMatch) {
+    throw new Error('Preferred time must be in a valid range format');
+  }
+
+  const startHour = Number(startMatch[1]);
+  const startMinute = Number(startMatch[2]);
+  const endHour = Number(endMatch[1]);
+  const endMinute = Number(endMatch[2]);
+  const startPeriod = (startMatch[3] || '').toUpperCase();
+  const endPeriod = (endMatch[3] || '').toUpperCase();
+
+  const to24Hour = (hour, minute, period, fallbackIsStart = false) => {
+    let normalizedHour = hour;
+
+    if (period) {
+      if (period === 'PM' && normalizedHour < 12) normalizedHour += 12;
+      if (period === 'AM' && normalizedHour === 12) normalizedHour = 0;
+    } else if (fallbackIsStart && normalizedHour < 10) {
+      normalizedHour += 12;
+    }
+
+    return `${String(normalizedHour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  };
+
+  return {
+    startTime: to24Hour(startHour, startMinute, startPeriod, true),
+    endTime: to24Hour(endHour, endMinute, endPeriod, false),
+    label: `${to12HourLabel(to24Hour(startHour, startMinute, startPeriod, true))} - ${to12HourLabel(to24Hour(endHour, endMinute, endPeriod, false))}`,
+  };
+}
+
+async function findCorporateRequestConflict({
+  preferredBranchId,
+  eventDate,
+  preferredTime,
+}) {
+  const timeRange = parseCorporateTimeRange(preferredTime);
+
+  const { rows } = await pool.query(
+    `
+    SELECT
+      b.id AS booking_id,
+      b.customer_name,
+      b.phone AS customer_phone,
+      b.booking_date,
+      b.start_time,
+      b.end_time,
+      br.branch_name,
+      g.ground_name
+    FROM bookings b
+    LEFT JOIN branches br
+      ON br.id = b.branch_id
+    LEFT JOIN grounds g
+      ON g.id = b.ground_id
+    WHERE b.branch_id = $1
+      AND b.booking_date = $2
+      AND b.status IN ('confirmed', 'completed', 'approved')
+      AND (
+        b.start_time < $4
+        AND b.end_time > $3
+      )
+    ORDER BY b.start_time ASC
+    LIMIT 1
+    `,
+    [
+      preferredBranchId,
+      eventDate,
+      timeRange.startTime,
+      timeRange.endTime,
+    ]
+  );
+
+  const conflict = rows[0];
+
+  if (!conflict) {
+    return {
+      conflict: false,
+      timeRange,
+    };
+  }
+
+  return {
+    conflict: true,
+    timeRange,
+    booking: {
+      booking_id: conflict.booking_id,
+      customer_name: conflict.customer_name,
+      customer_phone: conflict.customer_phone,
+      branch_name: conflict.branch_name,
+      ground_name: conflict.ground_name,
+      booking_date: conflict.booking_date,
+      booking_time: `${to12HourLabel(conflict.start_time)} - ${to12HourLabel(conflict.end_time)}`,
+    },
+  };
+}
+
 function validateSlot({ branchId, date, startTime, endTime }) {
   const normalizedDate = normalizeDate(date);
   const numericBranchId = Number(branchId);
@@ -760,6 +877,37 @@ async function getCorporateRequests() {
 async function updateCorporateRequestStatus(requestId, status) {
   if (!['pending', 'approved', 'rejected'].includes(status)) {
     throw new Error('Invalid corporate request status');
+  }
+
+  const requestResult = await pool.query(
+    `
+    SELECT *
+    FROM corporate_requests
+    WHERE id = $1
+    `,
+    [requestId]
+  );
+
+  const existingRequest = requestResult.rows[0];
+
+  if (!existingRequest) {
+    throw new Error('Corporate request not found');
+  }
+
+  if (status === 'approved') {
+    const conflictResult = await findCorporateRequestConflict({
+      preferredBranchId: existingRequest.preferred_branch_id,
+      eventDate: existingRequest.event_date,
+      preferredTime: existingRequest.preferred_time,
+    });
+
+    if (conflictResult.conflict) {
+      const error = new Error('Booking conflict detected for this corporate request.');
+      error.code = 'CORPORATE_REQUEST_CONFLICT';
+      error.conflict = conflictResult.booking;
+      error.timeRange = conflictResult.timeRange;
+      throw error;
+    }
   }
 
   const { rows } = await pool.query(

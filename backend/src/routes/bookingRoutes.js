@@ -386,6 +386,13 @@ router.patch('/corporate-requests/:id/status', adminMiddleware, async (req, res)
     return res.json(updated);
   } catch (error) {
     console.error('Failed to update corporate request:', error);
+    if (error.code === 'CORPORATE_REQUEST_CONFLICT') {
+      return res.status(409).json({
+        error: error.message || 'Booking conflict detected',
+        conflict: error.conflict || null,
+      });
+    }
+
     return res.status(400).json({ error: error.message || 'Failed to update request' });
   }
 });

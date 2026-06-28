@@ -25,6 +25,7 @@ export default function AdminDashboard() {
   const [message, setMessage] = useState("");
   const [corporateAction, setCorporateAction] = useState({});
   const [exportingCsv, setExportingCsv] = useState(false);
+  const [conflictModal, setConflictModal] = useState(null);
 
   const metrics = useMemo(() => {
     if (analytics) {
@@ -138,6 +139,7 @@ export default function AdminDashboard() {
 
   const updateCorporateRequestStatus = async (requestId, status) => {
     try {
+      setMessage("");
       setCorporateAction((prev) => ({
         ...prev,
         [requestId]: { status, loading: true, error: "" },
@@ -161,6 +163,19 @@ export default function AdminDashboard() {
       }));
     } catch (error) {
       console.error(error);
+      if (error.response?.status === 409 && error.response?.data?.conflict) {
+        setCorporateAction((prev) => ({
+          ...prev,
+          [requestId]: { status, loading: false, error: "" },
+        }));
+        setConflictModal({
+          requestId,
+          conflict: error.response.data.conflict,
+        });
+        setMessage("Booking conflict detected. Review the existing booking before approving.");
+        return;
+      }
+
       setCorporateAction((prev) => ({
         ...prev,
         [requestId]: { status, loading: false, error: "Failed to update corporate request." },
@@ -466,6 +481,77 @@ export default function AdminDashboard() {
           </div>
         </section>
       </main>
+
+      {conflictModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-bold uppercase tracking-[0.2em] text-red-700">Booking Conflict Detected</p>
+                <h2 className="mt-2 text-2xl font-black text-slate-950">This corporate request overlaps an existing booking.</h2>
+              </div>
+              <button
+                onClick={() => setConflictModal(null)}
+                className="rounded-full bg-slate-100 px-3 py-1 text-lg font-black text-slate-700"
+              >
+                X
+              </button>
+            </div>
+
+            <div className="mt-6 grid gap-4 rounded-2xl border border-red-200 bg-red-50 p-5 sm:grid-cols-2">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Branch</p>
+                <p className="mt-2 font-black text-slate-950">{conflictModal.conflict.branch_name}</p>
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Ground</p>
+                <p className="mt-2 font-black text-slate-950">{conflictModal.conflict.ground_name}</p>
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Date</p>
+                <p className="mt-2 font-black text-slate-950">{new Date(conflictModal.conflict.booking_date).toLocaleDateString("en-GB")}</p>
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Time</p>
+                <p className="mt-2 font-black text-slate-950">{conflictModal.conflict.booking_time}</p>
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+              <p className="text-sm font-bold uppercase tracking-wide text-slate-500">Already booked by</p>
+              <p className="mt-2 text-xl font-black text-slate-950">{conflictModal.conflict.customer_name}</p>
+              <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+                <p>Booking ID: <span className="font-bold">#{conflictModal.conflict.booking_id}</span></p>
+                <p>Phone: <span className="font-bold">{conflictModal.conflict.customer_phone}</span></p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <button
+                onClick={() => navigate(`/admin/bookings/${conflictModal.conflict.booking_id}`)}
+                className="rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white"
+              >
+                View Booking
+              </button>
+              <button
+                onClick={() => {
+                  updateCorporateRequestStatus(conflictModal.requestId, "rejected");
+                  setConflictModal(null);
+                }}
+                className="rounded-xl border border-red-200 bg-white px-5 py-3 text-sm font-bold text-red-700"
+              >
+                Reject Request
+              </button>
+              <button
+                onClick={() => setConflictModal(null)}
+                className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
     </div>
   );
