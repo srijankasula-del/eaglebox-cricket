@@ -9,7 +9,6 @@ const sections = [
   { id: "corporate", label: "Corporate Requests" },
   { id: "refunds", label: "Refunds" },
   { id: "analytics", label: "Analytics" },
-  { id: "settings", label: "Settings" },
 ];
 
 const statusStyle = {
@@ -34,7 +33,6 @@ export default function AdminDashboard() {
   const [activeSection, setActiveSection] = useState("dashboard");
   const [branchFilter, setBranchFilter] = useState("all");
   const [bookings, setBookings] = useState([]);
-  const [users, setUsers] = useState([]);
   const [cancelRequests, setCancelRequests] = useState([]);
   const [corporateRequests, setCorporateRequests] = useState([]);
   const [analytics, setAnalytics] = useState(null);
@@ -48,6 +46,7 @@ export default function AdminDashboard() {
   const [reviewing, setReviewing] = useState(false);
   const [groundSelection, setGroundSelection] = useState("");
   const [conflictModal, setConflictModal] = useState(null);
+  const [actionBusy, setActionBusy] = useState(null);
 
   const authHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
 
@@ -59,7 +58,6 @@ export default function AdminDashboard() {
 
     const endpoints = [
       ["bookings", "Bookings", () => axios.get(`${API_URL}/api/bookings`, { headers: authHeaders })],
-      ["users", "Users", () => axios.get(`${API_URL}/api/auth/users`, { headers: authHeaders })],
       ["cancelRequests", "Refund requests", () => axios.get(`${API_URL}/api/cancellation-requests`, { headers: authHeaders })],
       ["corporateRequests", "Corporate requests", () => axios.get(`${API_URL}/api/corporate-requests`, { headers: authHeaders })],
       ["analytics", "Analytics", () => axios.get(`${API_URL}/api/analytics`, { headers: authHeaders })],
@@ -73,7 +71,6 @@ export default function AdminDashboard() {
       if (result.status === "fulfilled") {
         const data = result.value.data || [];
         if (key === "bookings") setBookings(data);
-        if (key === "users") setUsers(data);
         if (key === "cancelRequests") setCancelRequests(data);
         if (key === "corporateRequests") setCorporateRequests(data);
         if (key === "analytics") setAnalytics(data);
@@ -153,25 +150,42 @@ export default function AdminDashboard() {
       .finally(() => setExportingCsv(false));
   };
 
+  const refreshAfterCorporateAction = async (messageText, keepSelection = false) => {
+    await fetchData();
+    setMessage(messageText);
+    if (!keepSelection) {
+      setSelectedCorporateRequest(null);
+      setRequestAvailability(null);
+      setGroundSelection("");
+      setConflictModal(null);
+    }
+  };
+
   const updateBookingStatus = async (bookingId, status) => {
     try {
+      setActionBusy(`booking-${bookingId}`);
       await axios.patch(`${API_URL}/api/bookings/${bookingId}/status`, { status }, { headers: authHeaders });
       setBookings((prev) => prev.map((booking) => booking.id === bookingId ? { ...booking, status } : booking));
       setMessage(`Booking #${bookingId} marked ${status}.`);
     } catch (error) {
       console.error(error);
       setMessage("Failed to update booking status.");
+    } finally {
+      setActionBusy(null);
     }
   };
 
   const updateRefundStatus = async (requestId, status) => {
     try {
+      setActionBusy(`refund-${requestId}`);
       await axios.patch(`${API_URL}/api/cancellation-requests/${requestId}/status`, { status }, { headers: authHeaders });
       setCancelRequests((prev) => prev.filter((request) => request.id !== requestId));
       setMessage(`Refund request ${status}.`);
     } catch (error) {
       console.error(error);
       setMessage("Failed to update refund request.");
+    } finally {
+      setActionBusy(null);
     }
   };
 
@@ -199,7 +213,8 @@ export default function AdminDashboard() {
     }
 
     try {
-      await axios.patch(
+      setActionBusy(`corp-${selectedCorporateRequest.id}-ground`);
+      const response = await axios.patch(
         `${API_URL}/api/corporate-requests/${selectedCorporateRequest.id}/ground`,
         { groundId: Number(groundSelection) },
         { headers: authHeaders }
@@ -207,15 +222,17 @@ export default function AdminDashboard() {
       setCorporateRequests((prev) =>
         prev.map((request) =>
           request.id === selectedCorporateRequest.id
-            ? { ...request, ground_id: Number(groundSelection) }
+            ? { ...request, ground_id: Number(response.data?.ground_id || groundSelection) }
             : request
         )
       );
-      setMessage("Ground assigned successfully.");
-      await openCorporateReview({ ...selectedCorporateRequest, ground_id: Number(groundSelection) });
+      await refreshAfterCorporateAction("Ground assigned successfully.", true);
+      await openCorporateReview({ ...selectedCorporateRequest, ground_id: Number(response.data?.ground_id || groundSelection) });
     } catch (error) {
       console.error(error);
       setMessage(error.response?.data?.error || "Failed to assign ground.");
+    } finally {
+      setActionBusy(null);
     }
   };
 
@@ -223,21 +240,13 @@ export default function AdminDashboard() {
     if (!selectedCorporateRequest) return;
 
     try {
+      setActionBusy(`corp-${selectedCorporateRequest.id}-approve`);
       await axios.patch(
         `${API_URL}/api/corporate-requests/${selectedCorporateRequest.id}/status`,
         { status: "approved", groundId: Number(groundSelection) },
         { headers: authHeaders }
       );
-      setCorporateRequests((prev) =>
-        prev.map((request) =>
-          request.id === selectedCorporateRequest.id
-            ? { ...request, status: "approved", ground_id: Number(groundSelection) }
-            : request
-        )
-      );
-      setMessage("Corporate request approved.");
-      setSelectedCorporateRequest(null);
-      setRequestAvailability(null);
+      await refreshAfterCorporateAction("Corporate request approved.");
     } catch (error) {
       console.error(error);
       if (error.response?.status === 409 && error.response?.data?.conflict) {
@@ -249,20 +258,21 @@ export default function AdminDashboard() {
       } else {
         setMessage(error.response?.data?.error || "Failed to approve corporate request.");
       }
+    } finally {
+      setActionBusy(null);
     }
   };
 
   const rejectCorporate = async (requestId) => {
     try {
+      setActionBusy(`corp-${requestId}-reject`);
       await axios.patch(`${API_URL}/api/corporate-requests/${requestId}/status`, { status: "rejected" }, { headers: authHeaders });
-      setCorporateRequests((prev) => prev.map((request) => request.id === requestId ? { ...request, status: "rejected" } : request));
-      setMessage("Corporate request rejected.");
-      setSelectedCorporateRequest(null);
-      setRequestAvailability(null);
-      setConflictModal(null);
+      await refreshAfterCorporateAction("Corporate request rejected.");
     } catch (error) {
       console.error(error);
       setMessage(error.response?.data?.error || "Failed to reject corporate request.");
+    } finally {
+      setActionBusy(null);
     }
   };
 
@@ -594,32 +604,6 @@ export default function AdminDashboard() {
               </section>
             ) : null}
 
-            {activeSection === "settings" ? (
-              <section className="grid gap-6 xl:grid-cols-2">
-                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <h3 className="text-xl font-black">Settings</h3>
-                  <p className="mt-1 text-sm text-slate-500">Branch view, export, and operational preferences.</p>
-                  <div className="mt-5 space-y-3">
-                    {branchOptions.map((branch) => (
-                      <button key={branch} onClick={() => setBranchFilter(branch)} className={`w-full rounded-xl px-4 py-3 text-left font-bold ${branchFilter === branch ? "bg-emerald-50 text-emerald-800" : "bg-slate-50 text-slate-700"}`}>
-                        {toBranchLabel(branch)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <h3 className="text-xl font-black">Admin Users</h3>
-                  <div className="mt-4 space-y-3">
-                    {users.slice(0, 8).map((user) => (
-                      <div key={user.id} className="rounded-xl border border-slate-200 p-3">
-                        <p className="font-bold">{user.full_name}</p>
-                        <p className="text-sm text-slate-500">{user.email}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
-            ) : null}
           </div>
         </main>
       </div>
@@ -693,9 +677,30 @@ export default function AdminDashboard() {
             </div>
 
             <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
-              <button onClick={assignGround} className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold">Save Ground</button>
-              <button onClick={approveCorporate} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-bold text-white">Approve</button>
-              <button onClick={() => rejectCorporate(selectedCorporateRequest.id)} className="rounded-xl bg-red-700 px-5 py-3 text-sm font-bold text-white">Reject</button>
+              <button
+                type="button"
+                onClick={assignGround}
+                disabled={reviewing || actionBusy === `corp-${selectedCorporateRequest.id}-ground`}
+                className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {actionBusy === `corp-${selectedCorporateRequest.id}-ground` ? "Saving..." : "Save Ground"}
+              </button>
+              <button
+                type="button"
+                onClick={approveCorporate}
+                disabled={reviewing || actionBusy === `corp-${selectedCorporateRequest.id}-approve`}
+                className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {actionBusy === `corp-${selectedCorporateRequest.id}-approve` ? "Approving..." : "Approve"}
+              </button>
+              <button
+                type="button"
+                onClick={() => rejectCorporate(selectedCorporateRequest.id)}
+                disabled={reviewing || actionBusy === `corp-${selectedCorporateRequest.id}-reject`}
+                className="rounded-xl bg-red-700 px-5 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {actionBusy === `corp-${selectedCorporateRequest.id}-reject` ? "Rejecting..." : "Reject"}
+              </button>
             </div>
           </div>
         </div>
@@ -716,7 +721,13 @@ export default function AdminDashboard() {
             </div>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
               <button onClick={() => navigate(`/admin/bookings/${conflictModal.conflict.booking_id}`)} className="rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white">View Booking</button>
-              <button onClick={() => rejectCorporate(conflictModal.requestId)} className="rounded-xl border border-red-200 bg-white px-5 py-3 text-sm font-bold text-red-700">Reject Request</button>
+              <button
+                type="button"
+                onClick={() => rejectCorporate(conflictModal.requestId)}
+                className="rounded-xl border border-red-200 bg-white px-5 py-3 text-sm font-bold text-red-700"
+              >
+                Reject Request
+              </button>
               <button onClick={() => setConflictModal(null)} className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700">Close</button>
             </div>
           </div>

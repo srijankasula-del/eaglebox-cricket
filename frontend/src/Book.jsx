@@ -41,6 +41,12 @@ const endTimeOptions = [
   },
 ];
 
+const OPEN_HOUR = 10;
+const CLOSE_HOUR = 22;
+const SLOT_MINUTES = 60;
+
+const toClockValue = (minutes) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+
 const initialSearch = {
   branchId: '',
   date: minDate,
@@ -84,6 +90,31 @@ const formatCreatedAt = (value) =>
       })
     : "";
 
+const buildLiveSlots = (dateValue, now = new Date()) => {
+  if (!dateValue) return [];
+
+  const selectedDate = new Date(`${String(dateValue).slice(0, 10)}T00:00:00`);
+  const today = new Date();
+  const startFloor = isNaN(selectedDate.getTime()) ? OPEN_HOUR * 60 : OPEN_HOUR * 60;
+  const isSameDay = selectedDate.toDateString() === today.toDateString();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const earliest = isSameDay
+    ? Math.max(startFloor, Math.ceil(currentMinutes / SLOT_MINUTES) * SLOT_MINUTES)
+    : startFloor;
+  const slots = [];
+
+  for (let start = earliest; start + SLOT_MINUTES <= CLOSE_HOUR * 60; start += SLOT_MINUTES) {
+    const end = start + SLOT_MINUTES;
+    slots.push({
+      startTime: toClockValue(start),
+      endTime: toClockValue(end),
+      label: `${formatTimeLabel(toClockValue(start))} - ${formatTimeLabel(toClockValue(end))}`,
+    });
+  }
+
+  return slots;
+};
+
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -106,10 +137,18 @@ const [searchData, setSearchData] =
   const [bookingForm, setBookingForm] = useState(initialBookingForm);
   const [bookingResult, setBookingResult] = useState(null);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
+  const [liveNow, setLiveNow] = useState(() => new Date());
+  const [liveSlots, setLiveSlots] = useState([]);
+  const [liveSlotsLoading, setLiveSlotsLoading] = useState(false);
   const [submittingBooking, setSubmittingBooking] = useState(false);
   const [error, setError] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const availabilityCardRef = useRef(null);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setLiveNow(new Date()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const loadBranches = async () => {
@@ -166,8 +205,59 @@ const [searchData, setSearchData] =
     return branchSummaries.find((branch) => String(branch.id) === String(searchData.branchId)) || null;
   }, [branchSummaries, searchData.branchId]);
 
-  const durationHours = useMemo(() => calculateDuration(searchData.startTime, searchData.endTime), [searchData.startTime, searchData.endTime]);
-  const price = useMemo(() => durationHours * 800, [durationHours]);
+  const liveSlotWindows = useMemo(() => buildLiveSlots(searchData.date, liveNow), [searchData.date, liveNow]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadLiveSlots = async () => {
+      if (!searchData.branchId || liveSlotWindows.length === 0) {
+        setLiveSlots([]);
+        return;
+      }
+
+      setLiveSlotsLoading(true);
+
+      try {
+        const results = await Promise.all(
+          liveSlotWindows.map(async (slot) => {
+            try {
+              const response = await axios.post(`${API_URL}/api/check-availability`, {
+                branchId: Number(searchData.branchId),
+                date: searchData.date,
+                startTime: slot.startTime,
+                endTime: slot.endTime,
+              });
+
+              return {
+                ...slot,
+                available: Boolean(response.data?.available),
+              };
+            } catch {
+              return {
+                ...slot,
+                available: false,
+              };
+            }
+          })
+        );
+
+        if (!cancelled) {
+          setLiveSlots(results);
+        }
+      } finally {
+        if (!cancelled) {
+          setLiveSlotsLoading(false);
+        }
+      }
+    };
+
+    loadLiveSlots();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [searchData.branchId, searchData.date, liveSlotWindows]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -176,155 +266,106 @@ const [searchData, setSearchData] =
     setSelectedGround(null);
     setError('');
   };
-const handleRecommendedSlot = async () => {
-  if (!availabilityResult?.recommendation) return;
-
-  const recommendation = availabilityResult.recommendation;
-
-  const updatedSearch = {
-  ...searchData,
-  date: recommendation.date,
-  startTime: recommendation.startTime,
-  endTime: recommendation.endTime,
-};
-
-  // Update dropdowns
-  setSearchData(updatedSearch);
-
-  // Show loading
-  setCheckingAvailability(true);
-  setError("");
-
-  try {
-    const response = await axios.post(
-      `${API_URL}/api/check-availability`,
-      {
-        branchId: Number(updatedSearch.branchId),
-        date: updatedSearch.date,
-        startTime: updatedSearch.startTime,
-        endTime: updatedSearch.endTime,
-      }
-    );
-
-    if (response.data.available) {
-      const matchedGround =
-        groundsForBranch.find((ground) => ground.id === response.data.groundId) || null;
-
-      setSelectedGround(matchedGround || {
-        id: response.data.groundId,
-        ground_name: response.data.groundName,
-      });
-
-      setAvailabilityResult({
-        available: true,
-        groundName:
-          groundNameMap[response.data.groundName] ||
-          response.data.groundName,
-        groundId: response.data.groundId,
-        date: updatedSearch.date,
-        startTime: updatedSearch.startTime,
-        endTime: updatedSearch.endTime,
-        durationHours: calculateDuration(
-          updatedSearch.startTime,
-          updatedSearch.endTime
-        ),
-        price:
-          calculateDuration(
-            updatedSearch.startTime,
-            updatedSearch.endTime
-          ) * 800,
-      });
-    } else {
-      setAvailabilityResult(response.data);
+  const runAvailabilityCheck = async ({ branchId, date, startTime, endTime }) => {
+    if (!branchId || !date || !startTime || !endTime) {
+      setError("Please choose a branch, date and time to continue.");
+      return;
     }
-  } catch (err) {
-    console.error(err);
-    setError("Unable to check the recommended slot.");
-  } finally {
-    setCheckingAvailability(false);
-  }
-};
-  const handleCheckAvailability = async (event) => {
-  event.preventDefault();
 
-  if (
-    !searchData.branchId ||
-    !searchData.date ||
-    !searchData.startTime ||
-    !searchData.endTime
-  ) {
-    setError("Please choose a branch, date and time to continue.");
-    return;
-  }
-
-  if (durationHours <= 0) {
-    setError("Please select an end time after the start time.");
-    return;
-  }
-
-  setCheckingAvailability(true);
-  setError("");
-  setAvailabilityResult(null);
-  setSelectedGround(null);
-
-  try {
-    const availabilityResponse = await axios.post(
-      `${API_URL}/api/check-availability`,
-      {
-        branchId: Number(searchData.branchId),
-        date: searchData.date,
-        startTime: searchData.startTime,
-        endTime: searchData.endTime,
-      }
-    );
-
-    const isAvailable = Boolean(availabilityResponse.data?.available);
-
-    if (isAvailable) {
-      const groundToSelect =
-        groundsForBranch.find((ground) => ground.id === availabilityResponse.data.groundId) || {
-          id: availabilityResponse.data.groundId,
-          ground_name: availabilityResponse.data.groundName,
-        };
-
-      setSelectedGround(groundToSelect);
-
-      setAvailabilityResult({
-        available: true,
-        groundName:
-          groundNameMap[availabilityResponse.data.groundName] ||
-          availabilityResponse.data.groundName,
-        groundId: availabilityResponse.data.groundId,
-        date: searchData.date,
-        startTime: searchData.startTime,
-        endTime: searchData.endTime,
-        durationHours,
-        price,
-      });
-    } else {
-      setAvailabilityResult(availabilityResponse.data);
+    const duration = calculateDuration(startTime, endTime);
+    if (duration <= 0) {
+      setError("Please select an end time after the start time.");
+      return;
     }
-  } catch (err) {
-    console.error("Failed to check availability", err);
-    setError(
-      "We could not check availability right now. Please try again."
-    );
-  } finally {
-    setCheckingAvailability(false);
-    setTimeout(() => {
-  availabilityCardRef.current?.scrollIntoView({
-    behavior: "smooth",
-    block: "start",
-  });
-}, 300);
-}
-};
 
-  const openBookingModal = () => {
-    if (!availabilityResult?.available) return;
+    setCheckingAvailability(true);
+    setError("");
+    setAvailabilityResult(null);
+    setSelectedGround(null);
+
+    try {
+      const availabilityResponse = await axios.post(
+        `${API_URL}/api/check-availability`,
+        {
+          branchId: Number(branchId),
+          date,
+          startTime,
+          endTime,
+        }
+      );
+
+      const isAvailable = Boolean(availabilityResponse.data?.available);
+
+      if (isAvailable) {
+        const groundToSelect =
+          groundsForBranch.find((ground) => ground.id === availabilityResponse.data.groundId) || {
+            id: availabilityResponse.data.groundId,
+            ground_name: availabilityResponse.data.groundName,
+          };
+
+        setSelectedGround(groundToSelect);
+
+        setAvailabilityResult({
+          available: true,
+          groundName:
+            groundNameMap[availabilityResponse.data.groundName] ||
+            availabilityResponse.data.groundName,
+          groundId: availabilityResponse.data.groundId,
+          date,
+          startTime,
+          endTime,
+          durationHours: duration,
+          price: duration * 800,
+        });
+      } else {
+        setAvailabilityResult(availabilityResponse.data);
+      }
+    } catch (err) {
+      console.error("Failed to check availability", err);
+      setError(
+        "We could not check availability right now. Please try again."
+      );
+    } finally {
+      setCheckingAvailability(false);
+      setTimeout(() => {
+        availabilityCardRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 300);
+    }
+  };
+
+  const handleRecommendedSlot = async () => {
+    if (!availabilityResult?.recommendation) return;
+
+    const recommendation = availabilityResult.recommendation;
+    const updatedSearch = {
+      ...searchData,
+      date: recommendation.date,
+      startTime: recommendation.startTime,
+      endTime: recommendation.endTime,
+    };
+
+    setSearchData(updatedSearch);
+    await runAvailabilityCheck(updatedSearch);
+  };
+
+  const handleLiveSlotAction = async (slot) => {
+    if (!slot.available) {
+      setError("This slot is occupied. Please choose another one or check back later.");
+      return;
+    }
+
+    const nextSearch = {
+      ...searchData,
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+    };
+
+    setSearchData(nextSearch);
+    await runAvailabilityCheck(nextSearch);
     setModalOpen(true);
-    setBookingResult(null);
-    setError('');
   };
 
   const handleBookingInput = (event) => {
@@ -373,7 +414,7 @@ const response = await axios.post(
         date: confirmedBooking.date || searchData.date,
         startTime: confirmedBooking.startTime || searchData.startTime,
         endTime: confirmedBooking.endTime || searchData.endTime,
-        price: confirmedBooking.amount || price,
+        price: confirmedBooking.amount || availabilityResult?.price || 0,
         status: confirmedBooking.status || 'confirmed',
         createdAt: confirmedBooking.createdAt,
       });
@@ -388,6 +429,11 @@ const response = await axios.post(
       setSubmittingBooking(false);
     }
   };
+
+  const selectedSlotLabel =
+    searchData.startTime && searchData.endTime
+      ? `${formatTimeLabel(searchData.startTime)} - ${formatTimeLabel(searchData.endTime)}`
+      : "Choose a live slot below";
 
   return (
     <div className="min-h-screen bg-[#f6f8f4] text-slate-950">
@@ -468,7 +514,7 @@ const response = await axios.post(
   Choose your date and preferred time. We will confirm the ground before booking.
 </p>
 
-            <form onSubmit={handleCheckAvailability} className="mt-6 space-y-4">
+            <div className="mt-6 space-y-4">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
 
   <div className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">
@@ -494,71 +540,47 @@ const response = await axios.post(
                 />
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-800">Start Time</label>
-                  <select
-                    name="startTime"
-                    value={searchData.startTime}
-                    onChange={handleChange}
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-600"
-                  >{timeOptions
-  .filter(option => option.value !== "22:00")
-  .map((option) => (
-                    
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-800">End Time</label>
-                  <select
-  name="endTime"
-  value={searchData.endTime}
-  onChange={handleChange}
-  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-600"
->
-  {endTimeOptions
-    .filter((option) => option.value > searchData.startTime)
-    .map((option) => (
-      <option key={option.value} value={option.value}>
-        {option.label}
-      </option>
-    ))}
-</select>
-                </div>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-600">
-  Duration
-</div>
-                  <div className="mt-2 text-lg font-semibold text-black">
-                    {durationHours > 0 ? `${durationHours} hour${durationHours > 1 ? 's' : ''}` : 'Select a time'}
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.25em] text-slate-500">Live slots</p>
+                    <h3 className="mt-1 text-base font-black text-slate-950">Current-time availability</h3>
                   </div>
+                  {liveSlotsLoading ? <span className="text-xs font-bold text-slate-500">Updating...</span> : null}
                 </div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                 <div className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-600">
-  Price
-</div>
-                  <div className="mt-2 text-lg font-semibold text-black">
-  Rs. {price}
-</div>
+                <p className="mt-2 text-sm text-slate-600">Selected slot: <span className="font-black text-slate-950">{selectedSlotLabel}</span></p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {liveSlots.length === 0 ? (
+                    <p className="text-sm text-slate-500">No future slots remain for the selected day.</p>
+                  ) : (
+                    liveSlots.map((slot) => (
+                      <button
+                        key={`${slot.startTime}-${slot.endTime}`}
+                        type="button"
+                        onClick={() => handleLiveSlotAction(slot)}
+                        className={`rounded-2xl border px-4 py-4 text-left transition ${
+                          slot.available
+                            ? "border-emerald-200 bg-emerald-50 hover:border-emerald-400"
+                            : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-black text-slate-950">{slot.label}</p>
+                            <p className={`mt-1 text-xs font-bold uppercase ${slot.available ? "text-emerald-700" : "text-slate-500"}`}>
+                              {slot.available ? "Available" : "Occupied"}
+                            </p>
+                          </div>
+                          <span className={`rounded-full px-3 py-1 text-xs font-black ${slot.available ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-700"}`}>
+                            {slot.available ? "Book Now" : "Notify Me"}
+                          </span>
+                        </div>
+                      </button>
+                    ))
+                  )}
                 </div>
               </div>
-
-              <button
-                type="submit"
-                disabled={checkingAvailability}
-                className="w-full rounded-2xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {checkingAvailability ? 'Checking...' : 'Check Availability'}
-              </button>
-            </form>
+            </div>
           </div>
 
           <div
@@ -569,7 +591,7 @@ const response = await axios.post(
             <h2 className="mt-2 text-3xl font-black text-slate-950">
   Live Availability
 </h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">Results update with your selected branch, date and time.</p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Pick a live slot to see the booking details and continue.</p>
 
             {checkingAvailability ? (
               <div className="mt-6 animate-pulse rounded-2xl border border-slate-200 bg-slate-50 p-6">
@@ -580,7 +602,6 @@ const response = await axios.post(
             ) : null}
 
             
-
             {availabilityResult?.available ? (
               <div className="mt-6 rounded-3xl border border-emerald-200 bg-emerald-50 p-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-700">Ground available</p>
@@ -604,23 +625,6 @@ const response = await axios.post(
                     <span className="font-semibold text-slate-900">Rs. {availabilityResult.price}</span>
                   </div>
                 </div>
-
-                <button
-  type="button"
-  onClick={() => {
-    const token = localStorage.getItem('token');
-
-    if (!token) {
-      window.location.href = '/login';
-      return;
-    }
-
-    openBookingModal();
-  }}
-  className="mt-6 w-full rounded-2xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800"
->
-  Continue Booking
-</button>
               </div>
             ) : null}
 
