@@ -356,20 +356,32 @@ router.patch(
 router.post('/corporate-requests', async (req, res) => {
   try {
     const request = await bookingService.createCorporateRequest(req.body);
-    return res.status(201).json({ success: true, request });
+    return res.status(201).json({ 
+      success: true, 
+      data: request 
+    });
   } catch (error) {
     console.error('Corporate request creation failed:', error);
-    return res.status(400).json({ error: error.message || 'Failed to create request' });
+    return res.status(400).json({ 
+      success: false,
+      error: error.message || 'Failed to create request' 
+    });
   }
 });
 
 router.get('/corporate-requests', adminMiddleware, async (req, res) => {
   try {
     const requests = await bookingService.getCorporateRequests();
-    return res.json(requests);
+    return res.json({ 
+      success: true, 
+      data: requests 
+    });
   } catch (error) {
     console.error('Failed to fetch corporate requests:', error);
-    return res.status(500).json({ error: 'Failed to fetch corporate requests' });
+    return res.status(500).json({ 
+      success: false,
+      error: 'Failed to fetch corporate requests' 
+    });
   }
 });
 
@@ -394,10 +406,16 @@ router.patch('/corporate-requests/:id/ground', adminMiddleware, async (req, res)
     const { groundId } = req.body;
 
     const updated = await bookingService.assignCorporateRequestGround(requestId, groundId);
-    return res.json(updated);
+    return res.json({ 
+      success: true, 
+      data: updated 
+    });
   } catch (error) {
     console.error('Failed to assign corporate ground:', error);
-    return res.status(400).json({ error: error.message || 'Failed to assign ground' });
+    return res.status(400).json({ 
+      success: false,
+      error: error.message || 'Failed to assign ground' 
+    });
   }
 });
 
@@ -407,28 +425,41 @@ router.patch('/corporate-requests/:id/status', adminMiddleware, async (req, res)
     const { status, groundId } = req.body;
 
     if (!Number.isInteger(requestId) || requestId <= 0) {
-      return res.status(400).json({ error: 'Invalid request id' });
+      return res.status(400).json({ 
+        success: false,
+        error: 'Invalid request id' 
+      });
     }
 
     const updated = await bookingService.updateCorporateRequestStatus(requestId, status, {
       groundId: groundId ? Number(groundId) : null,
     });
-    return res.json(updated);
+    return res.json({ 
+      success: true, 
+      data: updated 
+    });
   } catch (error) {
     console.error('Failed to update corporate request:', error);
     if (error.code === 'GROUND_ASSIGNMENT_REQUIRED') {
       return res.status(409).json({
+        success: false,
         error: error.message || 'Ground assignment required',
+        code: 'GROUND_ASSIGNMENT_REQUIRED'
       });
     }
     if (error.code === 'CORPORATE_REQUEST_CONFLICT') {
       return res.status(409).json({
+        success: false,
         error: error.message || 'Booking conflict detected',
+        code: 'CORPORATE_REQUEST_CONFLICT',
         conflict: error.conflict || null,
       });
     }
 
-    return res.status(400).json({ error: error.message || 'Failed to update request' });
+    return res.status(400).json({ 
+      success: false,
+      error: error.message || 'Failed to update request' 
+    });
   }
 });
 module.exports = router;
