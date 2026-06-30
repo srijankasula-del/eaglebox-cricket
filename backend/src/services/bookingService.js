@@ -115,7 +115,7 @@ async function getCorporateRequestAvailability(requestId) {
     FROM bookings b
     WHERE b.branch_id = $1
       AND b.booking_date = $2
-      AND b.status IN ('confirmed', 'completed', 'approved')
+      AND b.status IN ('confirmed', 'completed')
       AND (b.start_time < $4 AND b.end_time > $3)
     `,
     [request.preferred_branch_id, request.event_date, timeRange.startTime, timeRange.endTime]
@@ -176,7 +176,7 @@ async function findCorporateRequestConflict({
       WHERE b.branch_id = $1
         AND ($5::int IS NULL OR b.ground_id = $5)
         AND b.booking_date = $2
-        AND b.status IN ('confirmed', 'completed', 'approved')
+        AND b.status IN ('confirmed', 'completed')
         AND (
           b.start_time < $4
           AND b.end_time > $3
@@ -590,39 +590,34 @@ SELECT
     b.payment_method,
     b.amount,
     b.payment_date,
-
+    b.created_at,
     br.branch_name,
     g.ground_name,
-
     EXISTS (
         SELECT 1
         FROM feedback f
         WHERE f.booking_id = b.id
     ) AS feedback_submitted
-
 FROM bookings b
-
 LEFT JOIN branches br
 ON br.id = b.branch_id
-
 LEFT JOIN grounds g
 ON g.id = b.ground_id
-
 WHERE b.user_id = $1
-
 ORDER BY
-b.booking_date DESC,
-b.start_time DESC
+  b.created_at DESC,
+  b.booking_date DESC,
+  b.start_time DESC,
+  b.id DESC
+LIMIT 100
 `,
     [userId]
   );
 
   return rows;
 }
-  async function updateBookingStatus(
-  bookingId,
-  status
-) {
+
+async function updateBookingStatus(bookingId, status) {
   const existingBooking = await pool.query(
     `
     SELECT *
@@ -638,19 +633,30 @@ b.start_time DESC
 
   const currentStatus = existingBooking.rows[0].status;
 
-  if (
-    currentStatus === "completed" ||
-    currentStatus === "cancelled"
-  ) {
+  if (currentStatus === "completed" || currentStatus === "cancelled") {
+    throw new Error("This booking is locked and cannot be modified");
+  }
+
+  // FIX: Validate legal state transitions
+  const validTransitions = {
+    'pending': ['confirmed', 'cancelled'],
+    'confirmed': ['completed', 'cancelled'],
+    'completed': [],  // locked
+    'cancelled': []   // locked
+  };
+
+  if (!validTransitions[currentStatus]?.includes(status)) {
     throw new Error(
-      "This booking is locked and cannot be modified"
+      `Invalid status transition from '${currentStatus}' to '${status}'. ` +
+      `Allowed transitions: ${validTransitions[currentStatus].join(', ') || 'none (locked)'}`
     );
   }
 
   const result = await pool.query(
     `
     UPDATE bookings
-    SET status = $1
+    SET status = $1,
+        updated_at = NOW()
     WHERE id = $2
     RETURNING *
     `,
@@ -659,6 +665,7 @@ b.start_time DESC
 
   return result.rows[0];
 }
+
 async function createCancellationRequest({
   bookingId,
   userId,
@@ -796,10 +803,8 @@ ORDER BY
 
   return rows;
 }
-async function updateCancellationRequestStatus(
-  requestId,
-  status
-) {
+
+async function updateCancellationRequestStatus(requestId, status) {
   if (!['approved', 'rejected'].includes(status)) {
     throw new Error('Invalid cancellation status');
   }
@@ -990,6 +995,8 @@ async function getCorporateRequests() {
 }
 
 async function updateCorporateRequestStatus(requestId, status, options = {}) {
+  console.log(`[CORPORATE_REQUEST] Start approval: requestId=${requestId}, status=${status}, options=${JSON.stringify(options)}`);
+
   if (!['pending', 'approved', 'rejected'].includes(status)) {
     throw new Error('Invalid corporate request status');
   }
@@ -998,6 +1005,7 @@ async function updateCorporateRequestStatus(requestId, status, options = {}) {
 
   try {
     await client.query('BEGIN');
+    console.log(`[CORPORATE_REQUEST] Transaction started`);
 
     const requestResult = await client.query(
       `
@@ -1015,18 +1023,20 @@ async function updateCorporateRequestStatus(requestId, status, options = {}) {
       throw new Error('Corporate request not found');
     }
 
+    console.log(`[CORPORATE_REQUEST] Found request: id=${existingRequest.id}, status=${existingRequest.status}, ground_id=${existingRequest.ground_id}`);
+
     if (status === 'approved') {
       const requestedGroundId = options.groundId ?? existingRequest.ground_id;
+      console.log(`[CORPORATE_REQUEST] Approving with groundId=${requestedGroundId}`);
 
       if (!requestedGroundId) {
+        console.log(`[CORPORATE_REQUEST] ERROR: No ground assigned`);
         const error = new Error('Ground assignment required before approval.');
         error.code = 'GROUND_ASSIGNMENT_REQUIRED';
         throw error;
       }
 
-      const groundLockKey = Number(existingRequest.preferred_branch_id) || 0;
-      await client.query('SELECT pg_advisory_xact_lock($1, $2)', [groundLockKey, Number(requestedGroundId)]);
-
+      // FIX: Validate ground exists and belongs to branch BEFORE acquiring lock
       const groundResult = await client.query(
         `
         SELECT id, branch_id
@@ -1039,12 +1049,17 @@ async function updateCorporateRequestStatus(requestId, status, options = {}) {
       const ground = groundResult.rows[0];
 
       if (!ground) {
+        console.log(`[CORPORATE_REQUEST] ERROR: Ground not found: groundId=${requestedGroundId}`);
         throw new Error('Ground not found');
       }
 
       if (Number(ground.branch_id) !== Number(existingRequest.preferred_branch_id)) {
+        console.log(`[CORPORATE_REQUEST] ERROR: Ground branch mismatch. Ground branch=${ground.branch_id}, Request branch=${existingRequest.preferred_branch_id}`);
         throw new Error('Selected ground does not belong to the requested branch');
       }
+
+      // FIX: Check conflict BEFORE acquiring lock to avoid lock collisions
+      console.log(`[CORPORATE_REQUEST] Checking conflicts for: branch=${existingRequest.preferred_branch_id}, date=${existingRequest.event_date}, time=${existingRequest.preferred_time}, ground=${requestedGroundId}`);
 
       const conflictResult = await findCorporateRequestConflict({
         preferredBranchId: existingRequest.preferred_branch_id,
@@ -1054,6 +1069,7 @@ async function updateCorporateRequestStatus(requestId, status, options = {}) {
       });
 
       if (conflictResult.conflict) {
+        console.log(`[CORPORATE_REQUEST] CONFLICT DETECTED:`, JSON.stringify(conflictResult.booking));
         const error = new Error('Booking conflict detected for this corporate request.');
         error.code = 'CORPORATE_REQUEST_CONFLICT';
         error.conflict = conflictResult.booking;
@@ -1061,12 +1077,42 @@ async function updateCorporateRequestStatus(requestId, status, options = {}) {
         throw error;
       }
 
+      // FIX: Use unique lock key combining branch AND ground AND date
+      const lockKeyDate = Number(existingRequest.event_date.replace(/-/g, ''));
+      const lockKey1 = Number(existingRequest.preferred_branch_id);
+      const lockKey2 = Number(requestedGroundId) * 10000 + (lockKeyDate % 10000);
+
+      console.log(`[CORPORATE_REQUEST] Acquiring advisory lock: lockKey1=${lockKey1}, lockKey2=${lockKey2}`);
+      
+      await client.query(
+        'SELECT pg_advisory_xact_lock($1, $2)',
+        [lockKey1, lockKey2]
+      );
+
+      // Recheck conflict after lock acquired (double-check pattern)
+      console.log(`[CORPORATE_REQUEST] Rechecking conflicts after lock acquisition`);
+      const recheckConflict = await findCorporateRequestConflict({
+        preferredBranchId: existingRequest.preferred_branch_id,
+        eventDate: existingRequest.event_date,
+        preferredTime: existingRequest.preferred_time,
+        groundId: requestedGroundId,
+      });
+
+      if (recheckConflict.conflict) {
+        console.log(`[CORPORATE_REQUEST] CONFLICT DETECTED ON RECHECK:`, JSON.stringify(recheckConflict.booking));
+        const error = new Error('Booking conflict detected for this corporate request.');
+        error.code = 'CORPORATE_REQUEST_CONFLICT';
+        error.conflict = recheckConflict.booking;
+        error.timeRange = recheckConflict.timeRange;
+        throw error;
+      }
+
+      console.log(`[CORPORATE_REQUEST] No conflicts found, updating status to approved`);
+
       const updatedRequest = await client.query(
         `
         UPDATE corporate_requests
-        SET ground_id = $1,
-            status = 'approved',
-            updated_at = NOW()
+        SET ground_id = $1, status = 'approved', updated_at = NOW()
         WHERE id = $2
         RETURNING *
         `,
@@ -1074,14 +1120,17 @@ async function updateCorporateRequestStatus(requestId, status, options = {}) {
       );
 
       await client.query('COMMIT');
+      console.log(`[CORPORATE_REQUEST] SUCCESS: Request approved with ground assignment`);
       return updatedRequest.rows[0];
     }
+
+    // Rejection or other status
+    console.log(`[CORPORATE_REQUEST] Updating status to ${status}`);
 
     const { rows } = await client.query(
       `
       UPDATE corporate_requests
-      SET status = $1,
-          updated_at = NOW()
+      SET status = $1, updated_at = NOW()
       WHERE id = $2
       RETURNING *
       `,
@@ -1089,6 +1138,7 @@ async function updateCorporateRequestStatus(requestId, status, options = {}) {
     );
 
     await client.query('COMMIT');
+    console.log(`[CORPORATE_REQUEST] SUCCESS: Status updated to ${status}`);
 
     if (!rows[0]) {
       throw new Error('Corporate request not found');
@@ -1096,6 +1146,7 @@ async function updateCorporateRequestStatus(requestId, status, options = {}) {
 
     return rows[0];
   } catch (error) {
+    console.error(`[CORPORATE_REQUEST] ERROR: ${error.message}`, error);
     try {
       await client.query('ROLLBACK');
     } catch (rollbackError) {
@@ -1259,6 +1310,7 @@ async function getBookingsCsv() {
 
   return rows;
 }
+
 async function findRecommendedSlot(
   branchId,
   date,
@@ -1333,6 +1385,7 @@ for (let hour = 10; hour < 22; hour++) {
 
   return null;
 }
+
 module.exports = {
   getBranches,
   getGroundsByBranch,
